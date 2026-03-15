@@ -1,103 +1,98 @@
 # Resource Hub Desktop
 
-Resource Hub Desktop is a Windows desktop tool for managing:
+一个适用于 Windows 的桌面资源管理工具，用来统一管理：
 
-- Common websites
-- Local folders
-- Single files
+- 常用网站
+- 本地文件夹
+- 单个文件
 
-It supports:
+它支持：
 
-- Chinese / English switching
-- Favorites / pin-to-top
-- Search and category filters
-- Import / export JSON backups
-- Local path checking
-- Drag and drop for files and folders
-- Building a standalone `.exe`
+- 中英文切换
+- 收藏 / 置顶
+- 搜索与分类筛选
+- 导入 / 导出 JSON 备份
+- 本地路径检测
+- 文件和文件夹拖拽添加
+- 打包为独立 `.exe`
 
-## Quick Start For Normal Users
+## 普通用户怎么用
 
-If someone downloads the whole repository ZIP and just wants to use the app:
+如果只是想直接使用，不想安装 Python：
 
-1. Open the `release\ResourceHub-Ultimate-EXE-20260316` folder
-2. Double-click `ResourceHubPython.exe`
+1. 打开 `release\ResourceHub-Ultimate-EXE-20260316`
+2. 双击 `ResourceHubPython.exe`
 
-No Python installation is required for that EXE version.
+这版是可直接运行的 EXE 版本，不需要额外安装 Python。
 
-## Project Structure
+## 项目结构
 
-- `resource_hub.pyw`: main desktop application
-- `requirements-python.txt`: Python dependencies
-- `build-resource-hub-python.ps1`: build script for the Windows EXE
-- `start-resource-hub-python.bat`: start script for source mode
-- `Install-ResourceHub-Python-Shortcut.vbs`: create a desktop shortcut for source mode
-- `Install-ResourceHub-Exe-Shortcut.vbs`: create a desktop shortcut for the built EXE
-- `sites.sample.json`: sample website data
-- `folders.sample.json`: sample local resource data
-- `release/`: ready-to-run packaged EXE version
+- `resource_hub.pyw`：主程序源码
+- `requirements-python.txt`：Python 依赖
+- `build-resource-hub-python.ps1`：Windows EXE 打包脚本
+- `start-resource-hub-python.bat`：源码版启动脚本
+- `Install-ResourceHub-Python-Shortcut.vbs`：源码版桌面快捷方式脚本
+- `Install-ResourceHub-Exe-Shortcut.vbs`：EXE 版桌面快捷方式脚本
+- `sites.sample.json`：网站示例数据
+- `folders.sample.json`：本地资源示例数据
+- `release/`：已经打包好的可直接运行 EXE 版本
 
-## Requirements
+## 运行源码版
 
-- Windows
-- Python 3.11+ recommended
-
-## Run From Source
-
-Install dependencies:
+先安装依赖：
 
 ```powershell
 python -m pip install -r requirements-python.txt
 ```
 
-Start the app:
+运行程序：
 
 ```powershell
 python resource_hub.pyw
 ```
 
-Or double-click:
+也可以直接双击：
 
 - `start-resource-hub-python.bat`
 
-## Build EXE
+## 打包 EXE
 
-Install build tools first:
+先安装依赖和打包工具：
 
 ```powershell
 python -m pip install -r requirements-python.txt
 python -m pip install pyinstaller
 ```
 
-Then build:
+然后执行：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build-resource-hub-python.ps1
 ```
 
-Build output:
+打包产物默认会生成在：
 
 - `dist\ResourceHubPython\ResourceHubPython.exe`
 
-## Data Files
+## 数据文件
 
-The application reads and writes:
+程序运行时会读写：
 
 - `sites.json`
 - `folders.json`
 
-These runtime data files are ignored by Git.
+这些真实运行数据文件默认不会提交到 Git。
 
-For repository examples, use:
+仓库里的示例数据使用：
 
 - `sites.sample.json`
 - `folders.sample.json`
 
-## Notes
+## 说明
 
-- Dragging a folder into the app only stores that folder path.
-- Dragging a file into the app only stores that file path.
-- The app does not import all contents inside a dropped folder.
+- 拖入文件夹时，只会记录这个文件夹本身的路径
+- 拖入文件时，只会记录这个文件本身的路径
+- 不会把文件夹内部所有内容一次性导入
 
 ## License
 
