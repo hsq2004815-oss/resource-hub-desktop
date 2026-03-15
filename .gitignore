@@ -1,0 +1,12 @@
+__pycache__/
+build/
+dist/
+*.spec
+resource_hub_error.log
+
+sites.json
+folders.json
+
+.venv/
+env/
+venv/

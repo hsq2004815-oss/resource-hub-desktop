@@ -1,0 +1,22 @@
+[
+  {
+    "id": "sample-desktop",
+    "name": "Desktop",
+    "path": "%USERPROFILE%\\Desktop",
+    "kind": "folder",
+    "category": "System",
+    "note": "Quick access to the desktop",
+    "favorite": true,
+    "createdAt": "2026-03-16T00:00:00.0000000+08:00"
+  },
+  {
+    "id": "sample-notepad",
+    "name": "Notepad",
+    "path": "%WINDIR%\\notepad.exe",
+    "kind": "file",
+    "category": "System",
+    "note": "Example single-file resource",
+    "favorite": false,
+    "createdAt": "2026-03-16T00:05:00.0000000+08:00"
+  }
+]
