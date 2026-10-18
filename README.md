@@ -1,98 +1,103 @@
 # Resource Hub Desktop
 
-A Windows desktop tool for managing:
+A Windows desktop launcher for the things you use every day: frequently visited
+websites, local folders and single files.
 
-- Common websites
-- Local folders
-- Single files
+- Two resource types: links (sites) and local paths (folders / files)
+- Search, category filters, favorites pinned to the top
+- Drag and drop files or folders onto the window to add them
+- Import / export JSON backups (compatible with the legacy Python version)
+- Tray icon, global hotkey (`Ctrl + Alt + Space` by default), optional startup
+- Chinese / English UI, light / dark theme
+- Path health check, open, reveal in Explorer
 
-It supports:
+## Implementations
 
-- Chinese / English switching
-- Favorites / pin-to-top
-- Search and category filters
-- Import / export JSON backups
-- Local path checking
-- Drag and drop for files and folders
-- Building a standalone `.exe`
+This repository contains two generations of the app:
 
-## Quick Start For Normal Users
+| Path | Role |
+|---|---|
+| `app/` + `backend/` | **Current**: Flutter Windows client + headless Python backend, talking JSON Lines over stdio |
+| `resource_hub.pyw` | Legacy single-file Tkinter app, kept for reference and rollback; no longer developed |
 
-If you just want to use the app without installing Python:
+## Download / Install
 
-1. Open `release\ResourceHub-Ultimate-EXE-20260316`
-2. Double-click `ResourceHubPython.exe`
+Build outputs are **not committed** (`release/` is git-ignored). Build the package
+locally:
 
-The EXE version can run directly on Windows without installing Python.
+Requirements:
 
-## Project Structure
+- Flutter 3.47+ with Windows desktop support
+- Visual Studio 2022 Build Tools (Desktop development with C++)
+- Python 3.11+ with PyInstaller (for the frozen backend)
 
-- `resource_hub.pyw`: main desktop application
-- `requirements-python.txt`: Python dependencies
-- `build-resource-hub-python.ps1`: Windows EXE build script
-- `start-resource-hub-python.bat`: source-mode launcher
-- `Install-ResourceHub-Python-Shortcut.vbs`: desktop shortcut script for source mode
-- `Install-ResourceHub-Exe-Shortcut.vbs`: desktop shortcut script for the EXE build
-- `sites.sample.json`: sample website data
-- `folders.sample.json`: sample local resource data
-- `release/`: packaged EXE version ready to run
+```powershell
+# Edit $python and $flutterRoot at the top of the script to match your machine first.
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build-flutter-release.ps1
+```
+
+Output: `release\ResourceHub-Desktop-<timestamp>\`. Double-click `resource_hub.exe`
+to start. Keep the folder writable — data files are stored next to the executable.
 
 ## Run From Source
 
-Install dependencies:
+Start the Flutter client and it locates and launches the backend for you:
 
 ```powershell
-python -m pip install -r requirements-python.txt
+cd app
+flutter run -d windows
 ```
 
-Run the app:
+If Python is not on `PATH`, point `RH_PYTHON` at the interpreter. The backend can
+also be started by hand:
 
 ```powershell
-python resource_hub.pyw
+python backend\main.py [data-dir]
 ```
 
-Or double-click:
+Environment overrides used by the client: `RH_PYTHON`, `RH_BACKEND_SCRIPT`,
+`RH_BACKEND_EXE`, `RH_DATA_DIR`.
 
-- `start-resource-hub-python.bat`
+## Project Layout
 
-## Build EXE
-
-Install dependencies and build tools first:
-
-```powershell
-python -m pip install -r requirements-python.txt
-python -m pip install pyinstaller
 ```
-
-Then build:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\build-resource-hub-python.ps1
+app/                      Flutter client (lib/ = source, windows/ = native shell)
+backend/                  Python business layer + JSON Lines protocol server
+migration/                Migration record: audit, design system, ADRs, protocol,
+                          shell integration, packaging, UI refactor, screenshots
+resource_hub.pyw          Legacy Tkinter implementation (reference only)
+build-flutter-release.ps1 Package builder (Flutter client + frozen backend)
+release/                  Build output (git-ignored)
 ```
-
-Build output:
-
-- `dist\ResourceHubPython\ResourceHubPython.exe`
 
 ## Data Files
 
-At runtime, the app reads and writes:
+At runtime the app reads and writes, next to the executable (or the repository
+root when running from source):
 
-- `sites.json`
-- `folders.json`
+- `sites.json` — website favorites
+- `folders.json` — local folder / file favorites
+- `settings.json` — language, theme, global hotkey, startup
 
-These runtime data files are ignored by Git.
+These files are git-ignored. Sample data lives in `sites.sample.json` and
+`folders.sample.json`; the formats are unchanged from the legacy Python version,
+so existing data can be migrated as-is.
 
-Repository examples use:
+## Tests
 
-- `sites.sample.json`
-- `folders.sample.json`
+```powershell
+cd app
+flutter test                                  # 32 tests: widgets, protocol, JSON
+
+cd backend
+python -m unittest discover -s tests -t .     # 138 tests
+```
 
 ## Notes
 
-- Dropping a folder into the app only stores that folder path.
-- Dropping a file into the app only stores that file path.
-- The app does not import every file inside a dropped folder.
+- Dropping a folder stores only that folder path; its contents are not imported.
+- Dropping a file stores only that file path.
+- Closing the window hides it to the tray — use the tray menu to quit.
 
 ## License
 
