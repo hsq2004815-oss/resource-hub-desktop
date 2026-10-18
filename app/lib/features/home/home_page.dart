@@ -29,6 +29,7 @@ import '../../widgets/resource_table.dart';
 import '../../widgets/status_bar.dart';
 import 'resource_detail_panel.dart';
 import 'resource_form.dart';
+import 'ai_suggestions_dialog.dart';
 import 'resource_list_panel.dart';
 import 'settings_dialog.dart';
 import '../quick/quick_panel.dart';
@@ -1185,6 +1186,105 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  // -- Phase 22: AI category suggestions (review first) --------------------
+  Future<AiStatus?> _loadAiStatus() async {
+    try {
+      return await _repo.loadAiStatus();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> _setAiApiKey(String apiKey) async {
+    try {
+      return await _repo.setAiApiKey(apiKey);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _handleAiSuggest() async {
+    try {
+      final AiStatus status = await _repo.loadAiStatus();
+      if (!mounted) {
+        return;
+      }
+      if (!status.enabled) {
+        _setStatus(
+          _Status(key: 'ai_not_enabled', tone: StatusTone.warning),
+        );
+        return;
+      }
+      if (!status.configured) {
+        _setStatus(
+          _Status(key: 'ai_not_configured', tone: StatusTone.warning),
+        );
+        return;
+      }
+      _setStatus(_Status(key: 'ai_suggest_running'));
+      final List<AiSuggestion> suggestions =
+          await _repo.suggestAiCategories();
+      if (!mounted) {
+        return;
+      }
+      if (suggestions.isEmpty) {
+        _setStatus(_Status(key: 'ai_suggest_empty', tone: StatusTone.info));
+        return;
+      }
+      _setStatus(
+        _Status(
+          key: 'ai_suggest_review',
+          args: <Object?>[suggestions.length],
+          tone: StatusTone.info,
+        ),
+      );
+      final List<AiSuggestion>? chosen =
+          await showDialog<List<AiSuggestion>>(
+        context: context,
+        builder: (BuildContext dialogContext) => AiSuggestionsDialog(
+          suggestions: suggestions,
+          model: status.model,
+        ),
+      );
+      if (!mounted) {
+        return;
+      }
+      if (chosen == null || chosen.isEmpty) {
+        _setStatus(_Status(key: 'ai_suggest_cancelled', tone: StatusTone.info));
+        return;
+      }
+      int applied = 0;
+      for (final AiSuggestion suggestion in chosen) {
+        try {
+          await _repo.update(
+            suggestion.mode,
+            id: suggestion.id,
+            name: suggestion.name,
+            target: suggestion.target,
+            category: suggestion.suggestedCategory,
+            note: suggestion.note,
+          );
+          applied += 1;
+        } on BackendException {
+          // Keep going; the final status reports how many were applied.
+        }
+      }
+      await _reloadAll();
+      if (!mounted) {
+        return;
+      }
+      _setStatus(
+        _Status(
+          key: 'ai_suggest_applied',
+          args: <Object?>[applied],
+          tone: applied > 0 ? StatusTone.success : StatusTone.warning,
+        ),
+      );
+    } on BackendException catch (error) {
+      _setStatus(_Status.fromError(error));
+    }
+  }
+
   Future<void> _handleDelete() async {
     final ResourceItem? item = _selected;
     if (item == null) {
@@ -1559,6 +1659,8 @@ class _HomePageState extends State<HomePage> {
         onPickBookmarkDir: _pickBookmarkDir,
         onLoadExtensionStatus: _loadBookmarkExtensionStatus,
         onOpenExtensionFolder: _openExtensionFolder,
+        onLoadAiStatus: _loadAiStatus,
+        onSetAiKey: _setAiApiKey,
       ),
     );
   }
@@ -1728,6 +1830,7 @@ class _HomePageState extends State<HomePage> {
                         unawaited(_handleMoveItem(item, targetIndex)),
                     onSortByAdded: () => unawaited(_sortByAdded()),
                     onSyncBookmarks: () => unawaited(_syncBookmarks()),
+                    onAiSuggest: () => unawaited(_handleAiSuggest()),
                     onOpenSettings: _openSettings,
                       );
                     },

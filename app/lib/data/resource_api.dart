@@ -103,6 +103,17 @@ abstract interface class ResourceApi {
   /// Whether the browser extension is connected (Phase 18).
   Future<BookmarkExtensionStatus> loadBookmarkExtensionStatus();
 
+  // -- Phase 22: AI category suggestions (suggestion-only) -----------------
+  /// Whether AI is enabled and an API key is configured.
+  Future<AiStatus> loadAiStatus();
+
+  /// Stores the API key in the backend's DPAPI-encrypted file. Empty clears it.
+  Future<bool> setAiApiKey(String apiKey);
+
+  /// Asks the configured AI endpoint to suggest categories for uncategorized
+  /// resources. Nothing is written until the user confirms in the UI.
+  Future<List<AiSuggestion>> suggestAiCategories();
+
   /// Whether [hotkeyId] can be registered right now.
   Future<bool> probeHotkey(String hotkeyId);
 

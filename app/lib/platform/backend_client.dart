@@ -115,6 +115,7 @@ class BackendClient {
   Future<Map<String, dynamic>> call(
     String method, [
     Map<String, dynamic> params = const <String, dynamic>{},
+    Duration? timeout,
   ]) {
     if (_closed) {
       throw StateError('BackendClient is closed');
@@ -125,11 +126,14 @@ class BackendClient {
     _pending[id] = completer;
     _write(<String, dynamic>{'id': id, 'method': method, 'params': params});
 
+    final Duration effectiveTimeout = timeout ?? _timeout;
     return completer.future.timeout(
-      _timeout,
+      effectiveTimeout,
       onTimeout: () {
         _pending.remove(id);
-        throw TimeoutException('backend did not answer $method within $_timeout');
+        throw TimeoutException(
+          'backend did not answer $method within $effectiveTimeout',
+        );
       },
     );
   }

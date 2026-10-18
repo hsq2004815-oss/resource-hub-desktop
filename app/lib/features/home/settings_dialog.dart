@@ -39,6 +39,8 @@ class SettingsDialog extends StatefulWidget {
     this.onPickBookmarkDir,
     this.onLoadExtensionStatus,
     this.onOpenExtensionFolder,
+    this.onLoadAiStatus,
+    this.onSetAiKey,
   });
 
   final AppLanguage language;
@@ -69,6 +71,10 @@ class SettingsDialog extends StatefulWidget {
   /// Phase 18: open the shipped `bookmark-extension` folder in Explorer.
   final Future<void> Function(String path)? onOpenExtensionFolder;
 
+  /// Phase 22: AI status + encrypted API-key storage (backend owns the key).
+  final Future<AiStatus?> Function()? onLoadAiStatus;
+  final Future<bool> Function(String apiKey)? onSetAiKey;
+
   @override
   State<SettingsDialog> createState() => _SettingsDialogState();
 }
@@ -82,6 +88,12 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
   BookmarkStatus? _bookmarkStatus;
   BookmarkExtensionStatus? _extensionStatus;
+  AiStatus? _aiStatus;
+  bool _aiKeySaving = false;
+  String? _aiKeyResult;
+  late final TextEditingController _aiBaseUrlController;
+  late final TextEditingController _aiModelController;
+  final TextEditingController _aiKeyController = TextEditingController();
   bool _bookmarkStatusLoading = false;
   bool _bookmarkSyncing = false;
   String? _bookmarkResult;
@@ -95,8 +107,11 @@ class _SettingsDialogState extends State<SettingsDialog> {
   @override
   void initState() {
     super.initState();
+    _aiBaseUrlController = TextEditingController(text: _settings.aiBaseUrl);
+    _aiModelController = TextEditingController(text: _settings.aiModel);
     unawaited(_loadBookmarkStatus());
     unawaited(_loadExtensionStatus());
+    unawaited(_loadAiStatus());
   }
 
   Future<void> _loadExtensionStatus() async {
@@ -177,6 +192,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
   @override
   void dispose() {
+    _aiBaseUrlController.dispose();
+    _aiModelController.dispose();
+    _aiKeyController.dispose();
     if (_recordingField != null) {
       unawaited(widget.onHotkeyRecordingChanged(false));
     }
@@ -201,6 +219,39 @@ class _SettingsDialogState extends State<SettingsDialog> {
     }
     setState(() => _themeMode = mode);
     widget.onThemeModeChanged(mode);
+  }
+
+  Future<void> _loadAiStatus() async {
+    final Future<AiStatus?> Function()? loader = widget.onLoadAiStatus;
+    if (loader == null) {
+      return;
+    }
+    final AiStatus? status = await loader();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _aiStatus = status);
+  }
+
+  Future<void> _saveAiKey() async {
+    final Future<bool> Function(String)? setter = widget.onSetAiKey;
+    if (setter == null) {
+      return;
+    }
+    final AppStrings strings = context.l10n;
+    setState(() => _aiKeySaving = true);
+    final bool ok = await setter(_aiKeyController.text.trim());
+    await _loadAiStatus();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _aiKeySaving = false;
+      _aiKeyResult = ok ? strings.tx('settings_ai_key_saved') : null;
+      if (ok) {
+        _aiKeyController.clear();
+      }
+    });
   }
 
   Future<void> _apply(AppSettings next) async {
@@ -376,6 +427,133 @@ class _SettingsDialogState extends State<SettingsDialog> {
           ],
         ],
       ),
+    );
+  }
+
+  /// Phase 22: opt-in DeepSeek-compatible category suggestions. The API key is
+  /// persisted by the backend with Windows DPAPI, never in settings.json.
+  Widget _buildAiSection(
+    BuildContext context,
+    AppStrings t,
+    ColorScheme scheme,
+    TextTheme text,
+  ) {
+    final bool configured = _aiStatus?.configured ?? false;
+    final String keyState = configured
+        ? t.tx('settings_ai_key_saved')
+        : t.tx('settings_ai_key_missing');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(t.tx('settings_ai_title'), style: text.bodyMedium),
+                  const SizedBox(height: 2),
+                  Text(
+                    t.tx('settings_ai_hint'),
+                    style: text.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              key: const ValueKey<String>('ai-enabled-switch'),
+              value: _settings.aiEnabled,
+              onChanged: (bool value) => unawaited(
+                _apply(_settings.copyWith(aiEnabled: value)),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: TextField(
+                key: const ValueKey<String>('ai-base-url'),
+                controller: _aiBaseUrlController,
+                style: text.bodySmall,
+                decoration: InputDecoration(
+                  labelText: t.tx('settings_ai_base_url'),
+                  isDense: true,
+                ),
+                onSubmitted: (String value) => unawaited(
+                  _apply(_settings.copyWith(aiBaseUrl: value.trim())),
+                ),
+                onEditingComplete: () => unawaited(
+                  _apply(
+                    _settings.copyWith(
+                      aiBaseUrl: _aiBaseUrlController.text.trim(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: TextField(
+                key: const ValueKey<String>('ai-model'),
+                controller: _aiModelController,
+                style: text.bodySmall,
+                decoration: InputDecoration(
+                  labelText: t.tx('settings_ai_model'),
+                  isDense: true,
+                ),
+                onSubmitted: (String value) => unawaited(
+                  _apply(_settings.copyWith(aiModel: value.trim())),
+                ),
+                onEditingComplete: () => unawaited(
+                  _apply(
+                    _settings.copyWith(
+                      aiModel: _aiModelController.text.trim(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: TextField(
+                key: const ValueKey<String>('ai-api-key'),
+                controller: _aiKeyController,
+                obscureText: true,
+                style: text.bodySmall,
+                decoration: InputDecoration(
+                  labelText: t.tx('settings_ai_key'),
+                  isDense: true,
+                  helperText: keyState,
+                ),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            AppButton(
+              key: const ValueKey<String>('ai-save-key'),
+              label: t.tx('settings_ai_key_save'),
+              variant: AppButtonVariant.secondary,
+              compact: true,
+              onPressed:
+                  _aiKeySaving ? null : () => unawaited(_saveAiKey()),
+            ),
+          ],
+        ),
+        if (_aiKeyResult != null) ...<Widget>[
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            _aiKeyResult!,
+            style: text.bodySmall?.copyWith(color: scheme.primary),
+          ),
+        ],
+      ],
     );
   }
 
@@ -740,6 +918,8 @@ class _SettingsDialogState extends State<SettingsDialog> {
                       ),
                       const SizedBox(height: AppSpacing.xl),
                       _buildBookmarkSection(context, t, scheme, text),
+                      const SizedBox(height: AppSpacing.xl),
+                      _buildAiSection(context, t, scheme, text),
                       const SizedBox(height: AppSpacing.xl),
                       Row(
                         children: <Widget>[

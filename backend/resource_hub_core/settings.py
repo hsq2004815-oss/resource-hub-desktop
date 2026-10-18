@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
+from urllib.parse import urlparse
 
 from .normalize import parse_hotkey_id
 from .storage import CorruptDataError, JsonFileStore
@@ -20,11 +21,46 @@ DEFAULT_QUICK_LINKS_HOTKEY_ID = "Ctrl + Alt + Shift + L"
 DEFAULT_QUICK_FOLDERS_HOTKEY_ID = "Ctrl + Alt + Shift + F"
 SUPPORTED_LANGUAGES = frozenset({"zh", "en"})
 
+#: Phase 22: DeepSeek-compatible AI category suggestions (opt-in, off by default).
+DEFAULT_AI_BASE_URL = "https://api.deepseek.com"
+DEFAULT_AI_MODEL = "deepseek-chat"
+
 #: What deleting a link does with the matching browser bookmark (Phase 18):
 #: ``ask`` = ask per delete, ``remove`` = also queue a browser removal,
 #: ``keep`` = delete locally only.
 DELETE_MODES = ("ask", "remove", "keep")
 DEFAULT_BOOKMARK_DELETE_MODE = "ask"
+
+
+def _normalize_ai_base_url(raw: Any) -> str:
+    """Keep only plain http/https base URLs; anything else falls back.
+
+    The URL is stored as typed (minus surrounding whitespace) so a user-entered
+    path such as ``https://api.deepseek.com/v1`` keeps working: the client only
+    appends ``/chat/completions``. ``urlparse`` raises for a few malformed
+    inputs (e.g. a broken IPv6 literal), which must never brick settings load.
+    """
+    if not isinstance(raw, str):
+        return DEFAULT_AI_BASE_URL
+    value = raw.strip()
+    if not value or any(char.isspace() for char in value):
+        return DEFAULT_AI_BASE_URL
+    try:
+        parsed = urlparse(value)
+    except ValueError:
+        return DEFAULT_AI_BASE_URL
+    scheme = parsed.scheme.lower()
+    if scheme not in ("http", "https") or not parsed.netloc:
+        return DEFAULT_AI_BASE_URL
+    # urllib dispatches on the lowercase scheme; keep the rest untouched.
+    return f"{scheme}:{value.split(':', 1)[1]}"
+
+
+def _normalize_ai_model(raw: Any) -> str:
+    """Trim the model name; missing/empty input keeps the default."""
+    if not isinstance(raw, str):
+        return DEFAULT_AI_MODEL
+    return raw.strip() or DEFAULT_AI_MODEL
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +76,11 @@ class Settings:
     bookmark_delete_mode: str = DEFAULT_BOOKMARK_DELETE_MODE
     # Phase 19: Explorer right-click entry "添加到抽屉" (HKCU only).
     shell_context_menu_enabled: bool = True
+    # Phase 22: AI (DeepSeek-compatible) category suggestions. The API key is
+    # never part of settings.json — it lives in the DPAPI-encrypted key file.
+    ai_enabled: bool = False
+    ai_base_url: str = DEFAULT_AI_BASE_URL
+    ai_model: str = DEFAULT_AI_MODEL
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -53,6 +94,9 @@ class Settings:
             "bookmarkCustomDir": self.bookmark_custom_dir,
             "bookmarkDeleteMode": self.bookmark_delete_mode,
             "shellContextMenuEnabled": self.shell_context_menu_enabled,
+            "aiEnabled": self.ai_enabled,
+            "aiBaseUrl": self.ai_base_url,
+            "aiModel": self.ai_model,
         }
 
     @classmethod
@@ -113,6 +157,17 @@ class Settings:
         shell_menu = raw.get("shellContextMenuEnabled")
         if isinstance(shell_menu, bool):
             settings = replace(settings, shell_context_menu_enabled=shell_menu)
+
+        # Phase 22. The API key is deliberately *not* a settings field: a key in
+        # settings.json would be plaintext, so it lives in AiKeyStore instead.
+        ai_enabled = raw.get("aiEnabled")
+        if isinstance(ai_enabled, bool):
+            settings = replace(settings, ai_enabled=ai_enabled)
+
+        settings = replace(
+            settings, ai_base_url=_normalize_ai_base_url(raw.get("aiBaseUrl"))
+        )
+        settings = replace(settings, ai_model=_normalize_ai_model(raw.get("aiModel")))
 
         return settings
 

@@ -421,6 +421,38 @@ class FakeApi implements ResourceApi {
         extensionPath: extensionConnected ? r'C:\App\bookmark-extension' : '',
       );
 
+  // -- Phase 22: AI suggestions ------------------------------------------
+  AiStatus aiStatus = const AiStatus(
+    enabled: true,
+    configured: true,
+    model: 'deepseek-chat',
+  );
+  List<AiSuggestion> aiSuggestions = const <AiSuggestion>[];
+  int aiSuggestCalls = 0;
+  String? lastAiKey;
+
+  @override
+  Future<AiStatus> loadAiStatus() async => aiStatus;
+
+  @override
+  Future<bool> setAiApiKey(String apiKey) async {
+    lastAiKey = apiKey;
+    final bool configured = apiKey.trim().isNotEmpty;
+    aiStatus = AiStatus(
+      enabled: aiStatus.enabled,
+      configured: configured,
+      baseUrl: aiStatus.baseUrl,
+      model: aiStatus.model,
+    );
+    return configured;
+  }
+
+  @override
+  Future<List<AiSuggestion>> suggestAiCategories() async {
+    aiSuggestCalls += 1;
+    return aiSuggestions;
+  }
+
   /// Adds a link as if a bookmark had been imported, for event tests.
   void addBookmarkLink(ResourceItem item) => _links.add(item);
 
@@ -1718,6 +1750,92 @@ void main() {
 
     expect(saved, isNotEmpty);
     expect(saved.last.shellContextMenuEnabled, isFalse);
+  });
+
+  testWidgets('AI suggestions are written only after review', (
+    WidgetTester tester,
+  ) async {
+    final FakeApi api = FakeApi()
+      ..aiSuggestions = const <AiSuggestion>[
+        AiSuggestion(
+          mode: ViewMode.folders,
+          id: 'f3',
+          name: '字体资源包',
+          target: r'D:\Design\fonts',
+          suggestedCategory: '设计',
+          reason: '文件夹名与字体、设计相关',
+        ),
+      ];
+    await pumpApp(tester, api: api);
+
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+    expect(find.text('AI 整理建议'), findsOneWidget);
+    await tester.tap(find.text('AI 整理建议'));
+    await tester.pumpAndSettle();
+
+    expect(api.aiSuggestCalls, 1);
+    expect(find.text('AI 分类建议'), findsOneWidget);
+    expect(find.text('设计'), findsOneWidget);
+    // Nothing was written before pressing Apply.
+    expect(api.folders.firstWhere((ResourceItem e) => e.id == 'f3').category,
+        isNot('设计'));
+
+    await tester.tap(find.byKey(const ValueKey<String>('ai-apply-button')));
+    await tester.pumpAndSettle();
+
+    expect(api.folders.firstWhere((ResourceItem e) => e.id == 'f3').category,
+        '设计');
+    expect(find.textContaining('已应用 1 条 AI 分类建议'), findsOneWidget);
+  });
+
+  testWidgets('AI suggestions without a key show a setup hint', (
+    WidgetTester tester,
+  ) async {
+    final FakeApi api = FakeApi()
+      ..aiStatus = const AiStatus(enabled: true, configured: false);
+    await pumpApp(tester, api: api);
+
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('AI 整理建议'));
+    await tester.pumpAndSettle();
+
+    expect(api.aiSuggestCalls, 0);
+    expect(find.textContaining('请先在设置中填写并保存 API Key'), findsOneWidget);
+  });
+
+  testWidgets('settings expose AI switch and save the API key', (
+    WidgetTester tester,
+  ) async {
+    final FakeApi api = FakeApi();
+    final List<AppSettings> saved = <AppSettings>[];
+    await pumpApp(
+      tester,
+      api: api,
+      onSettingsChanged: (AppSettings settings) async => saved.add(settings),
+    );
+    await openSettings(tester);
+
+    final Finder aiSwitch =
+        find.byKey(const ValueKey<String>('ai-enabled-switch'));
+    await tester.ensureVisible(aiSwitch);
+    await tester.pumpAndSettle();
+    await tester.tap(aiSwitch);
+    await tester.pumpAndSettle();
+    expect(saved.last.aiEnabled, isTrue);
+
+    final Finder keyField =
+        find.byKey(const ValueKey<String>('ai-api-key'));
+    await tester.ensureVisible(keyField);
+    await tester.enterText(keyField, 'sk-test-123');
+    final Finder saveKey =
+        find.byKey(const ValueKey<String>('ai-save-key'));
+    await tester.ensureVisible(saveKey);
+    await tester.tap(saveKey);
+    await tester.pumpAndSettle();
+    expect(api.lastAiKey, 'sk-test-123');
+    expect(find.textContaining('API Key 已配置'), findsWidgets);
   });
 
   test('translation table keeps zh/en key parity', () {

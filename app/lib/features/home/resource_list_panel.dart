@@ -56,6 +56,7 @@ class ResourceListPanel extends StatelessWidget {
     required this.onMoveItem,
     required this.onSortByAdded,
     required this.onSyncBookmarks,
+    required this.onAiSuggest,
     required this.onOpenSettings,
     this.detailsPanel,
   });
@@ -102,6 +103,9 @@ class ResourceListPanel extends StatelessWidget {
   /// Phase 17: manually scan Chrome/Edge bookmarks now (also runs in the
   /// background when the setting is enabled).
   final VoidCallback onSyncBookmarks;
+
+  /// Phase 22: fetch AI category suggestions for uncategorized resources.
+  final VoidCallback onAiSuggest;
 
   /// Opens the settings dialog; lives in the toolbar since the in-content top
   /// bar was removed (the native Windows title bar already names the window).
@@ -299,6 +303,8 @@ class ResourceListPanel extends StatelessWidget {
                       onSortByAdded();
                     case 'sync_bookmarks':
                       onSyncBookmarks();
+                    case 'ai_suggest':
+                      onAiSuggest();
                     case 'export':
                       onExport();
                     case 'import':
@@ -327,6 +333,19 @@ class ResourceListPanel extends StatelessWidget {
                         const SizedBox(width: AppSpacing.md),
                         Text(
                           t.tx('bookmark_sync_menu'),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'ai_suggest',
+                    child: Row(
+                      children: <Widget>[
+                        const Icon(Icons.auto_awesome_outlined, size: 16),
+                        const SizedBox(width: AppSpacing.md),
+                        Text(
+                          t.tx('ai_suggest_menu'),
                           style: const TextStyle(fontSize: 13),
                         ),
                       ],

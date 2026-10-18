@@ -264,6 +264,36 @@ class BackendRepository implements ResourceApi {
     return BookmarkExtensionStatus.fromJson(result);
   }
 
+  @override
+  Future<AiStatus> loadAiStatus() async {
+    final Map<String, dynamic> result = await client.call('ai.status');
+    return AiStatus.fromJson(result);
+  }
+
+  @override
+  Future<bool> setAiApiKey(String apiKey) async {
+    final Map<String, dynamic> result = await client.call(
+      'ai.setKey',
+      <String, dynamic>{'apiKey': apiKey},
+    );
+    return result['configured'] == true;
+  }
+
+  @override
+  Future<List<AiSuggestion>> suggestAiCategories() async {
+    // The backend's AiClient allows up to 60s for a slow model; give the
+    // protocol request a little more headroom than that.
+    final Map<String, dynamic> result = await client.call(
+      'ai.suggestCategories',
+      const <String, dynamic>{},
+      const Duration(seconds: 75),
+    );
+    return (result['suggestions'] as List<dynamic>? ?? <dynamic>[])
+        .map((dynamic e) =>
+            AiSuggestion.fromJson(e as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
   Future<AppSettings> loadSettings() async {
     final Map<String, dynamic> result = await client.call('settings.get');
     return AppSettings.fromJson(result['settings'] as Map<String, dynamic>);

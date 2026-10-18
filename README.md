@@ -18,6 +18,10 @@ websites, local folders and single files.
 - Explorer context menu: right-click a folder icon or the empty area inside a
   folder (Windows 11: under "Show more options") to add it to the folders list and
   bring the app to the front; the entries can be switched off in Settings
+- Optional AI category suggestions (experimental, off by default): a DeepSeek or
+  OpenAI-compatible endpoint proposes categories for uncategorized sites/folders;
+  nothing is written until you review and apply the suggestions (API key stored
+  with Windows DPAPI)
 - Tray icon, global hotkey (`Ctrl + Alt + Space` by default), optional startup
 - Chinese / English UI, light / dark theme
 - Path health check, open, reveal in Explorer

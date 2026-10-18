@@ -43,12 +43,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, IO, Mapping
 
+from .ai import AI_KEY_FILENAME, AiClient, AiError, AiItem, AiKeyStore, AiKeyStoreError
 from .bookmark_bridge import BookmarkBridge
 from .bookmarks import BookmarkSyncEngine, BookmarkWatcher, dedup_key
 from .fs import list_children, open_fs_path, reveal_fs_path
 from .hotkey import GlobalHotkeyListener, is_combination_available
 from .launcher import open_link, open_path, reveal_path
-from .models import ALL_CATEGORIES
+from .models import ALL_CATEGORIES, UNCATEGORIZED, Resource
 from .service import (
     DuplicateError,
     NotFoundError,
@@ -61,6 +62,11 @@ from .storage import CorruptDataError
 
 PROTOCOL_VERSION = 1
 
+#: ``ai.suggestCategories`` defaults / clamps (Phase 22). The cap keeps one
+#: synchronous request (and its token cost) bounded.
+AI_SUGGESTION_LIMIT_DEFAULT = 40
+AI_SUGGESTION_LIMIT_MAX = 60
+
 #: Error codes the client can branch on. ``key`` (when present) is an i18n key
 #: from the legacy string table; ``detail`` is for logs, not for users.
 ERROR_CODES = (
@@ -72,6 +78,9 @@ ERROR_CODES = (
     "unknown_method",
     "operation_failed",
     "internal",
+    "ai_disabled",
+    "ai_not_configured",
+    "ai_request_failed",
 )
 
 
@@ -132,6 +141,9 @@ class ServerState:
     settings_store: SettingsStore
     settings: Settings
     bookmark_engine: BookmarkSyncEngine
+    #: Phase 22: DPAPI-encrypted API key for the optional AI suggestions. Kept
+    #: out of ``settings.json`` on purpose (that file is plain JSON).
+    ai_key_store: AiKeyStore
     load_error: str | None = None
     #: Serialises every protocol handler with the bookmark watcher's sync, so a
     #: background import can never interleave with a user-triggered write.
@@ -156,6 +168,9 @@ class Dispatcher:
             "bookmarks.sync": self._bookmarks_sync,
             "bookmarks.extensionStatus": self._bookmarks_extension_status,
             "bookmarks.matches": self._bookmarks_matches,
+            "ai.status": self._ai_status,
+            "ai.setKey": self._ai_set_key,
+            "ai.suggestCategories": self._ai_suggest_categories,
             "resources.list": self._list,
             "resources.add": self._add,
             "resources.update": self._update,
@@ -296,6 +311,195 @@ class Dispatcher:
             if dedup_key(url) in wanted
         ]
         return {"matches": matches}
+
+    # -- AI category suggestions (Phase 22) --------------------------------
+    def _ai_status(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        """Snapshot for the AI section of the settings panel."""
+        settings = self.state.settings
+        return {
+            "enabled": settings.ai_enabled,
+            "configured": self.state.ai_key_store.has_key(),
+            "baseUrl": settings.ai_base_url,
+            "model": settings.ai_model,
+        }
+
+    def _ai_set_key(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        """Store or clear the API key. An empty key means "clear it"."""
+        raw = params.get("apiKey")
+        if not isinstance(raw, str):
+            raise ProtocolError("bad_request", "params.apiKey must be a string")
+        store = self.state.ai_key_store
+        clean = raw.strip()
+        try:
+            if clean:
+                store.save(clean)
+            else:
+                store.clear()
+        except (AiKeyStoreError, OSError, ValueError):
+            # Never echo the key or the platform error text: both could end up
+            # in the UI status line. The detail below is deliberately generic.
+            raise ProtocolError(
+                "operation_failed", "could not store the AI API key"
+            ) from None
+        return {"configured": store.has_key()}
+
+    @staticmethod
+    def _suggestion_limit(params: Mapping[str, Any]) -> int:
+        """``params.limit``: default 40, clamped to 1..60, tolerant of junk."""
+        raw = params.get("limit")
+        if isinstance(raw, bool) or not isinstance(raw, int):
+            return AI_SUGGESTION_LIMIT_DEFAULT
+        return max(1, min(AI_SUGGESTION_LIMIT_MAX, raw))
+
+    def _uncategorized_batch(
+        self, limit: int
+    ) -> tuple[list[tuple[str, Resource]], list[str]]:
+        """Uncategorized items for one request: links first, then folders.
+
+        The per-collection stored order is preserved. ``existing_categories`` is
+        the union of the *categorised* categories of both collections, so the
+        model can prefer the user's own names.
+        """
+        service = self.state.service
+        existing = {
+            category
+            for mode in ("links", "folders")
+            for category in service.categories(mode)
+        }
+        batch: list[tuple[str, Resource]] = []
+        for mode in ("links", "folders"):
+            for item in service.items(mode):
+                if item.category != UNCATEGORIZED:
+                    continue
+                batch.append((mode, item))
+                if len(batch) >= limit:
+                    return batch, sorted(existing)
+        return batch, sorted(existing)
+
+    def _ai_suggest_categories(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        """Ask the AI endpoint for categories. Suggestion-only: nothing is saved.
+
+        The call is synchronous, so it blocks the (single-threaded) protocol
+        loop for up to the client's timeout — documented trade-off in ``ai.py``.
+        The default limit is 40 items and the cap is 60; links come first.
+        """
+        self._require_loaded()
+        settings = self.state.settings
+        if not settings.ai_enabled:
+            raise ProtocolError(
+                "ai_disabled", "AI category suggestions are disabled in settings"
+            )
+        api_key = self.state.ai_key_store.load()
+        if not api_key:
+            raise ProtocolError(
+                "ai_not_configured", "no AI API key is configured"
+            )
+
+        batch, existing_categories = self._uncategorized_batch(
+            self._suggestion_limit(params)
+        )
+        if not batch:
+            # Nothing to ask about: skip the network round-trip entirely.
+            return {
+                "model": settings.ai_model,
+                "suggestions": [],
+                "requestCount": 0,
+                "existingCategories": existing_categories,
+            }
+
+        items = [
+            AiItem(
+                mode=mode,
+                id=item.id,
+                name=item.name,
+                target=item.target,
+                kind="link"
+                if mode == "links"
+                else str(getattr(item, "kind", "folder")),
+            )
+            for mode, item in batch
+        ]
+        client = AiClient(settings.ai_base_url, settings.ai_model, api_key)
+        try:
+            reply = client.suggest_categories(items, existing_categories)
+        except AiError as exc:
+            # ``AiError.detail`` is bounded and never contains the API key.
+            raise ProtocolError(
+                "ai_request_failed", exc.detail or exc.code
+            ) from None
+
+        raw_suggestions = (
+            reply.get("suggestions") if isinstance(reply, Mapping) else None
+        )
+        if not isinstance(raw_suggestions, list):
+            raise ProtocolError(
+                "ai_request_failed", "the AI endpoint returned an unexpected reply"
+            )
+        return {
+            "model": settings.ai_model,
+            "suggestions": self._validate_suggestions(raw_suggestions, batch),
+            "requestCount": len(batch),
+            "existingCategories": existing_categories,
+        }
+
+    def _validate_suggestions(
+        self,
+        raw_suggestions: list[Any],
+        batch: list[tuple[str, Resource]],
+    ) -> list[dict[str, Any]]:
+        """Keep only suggestions that still describe a live uncategorized item.
+
+        Contract: the id must be one of the ids that were sent, the item must
+        still be uncategorized, the category is trimmed, non-empty, not the
+        sentinel and at most 40 characters; the reason is trimmed to 200; ids
+        are de-duplicated. The item is re-read from the service (not trusted
+        from the batch) and its fresh name/target/note are echoed back so the
+        UI can apply the suggestion without a stale local copy.
+        """
+        sent = {item.id: mode for mode, item in batch}
+        seen: set[str] = set()
+        suggestions: list[dict[str, Any]] = []
+        for raw in raw_suggestions:
+            if not isinstance(raw, Mapping):
+                continue
+            raw_id = raw.get("id")
+            if not isinstance(raw_id, str) or raw_id in seen:
+                continue
+            mode = sent.get(raw_id)
+            if mode is None:
+                continue
+            category = raw.get("category")
+            if not isinstance(category, str):
+                continue
+            clean_category = category.strip()
+            if (
+                not clean_category
+                or clean_category == UNCATEGORIZED
+                or len(clean_category) > 40
+            ):
+                continue
+            try:
+                current = self.state.service.get(mode, raw_id)
+            except NotFoundError:
+                continue
+            if current.category != UNCATEGORIZED:
+                continue
+            reason = raw.get("reason")
+            clean_reason = reason.strip()[:200] if isinstance(reason, str) else ""
+            seen.add(raw_id)
+            suggestions.append(
+                {
+                    "mode": mode,
+                    "id": raw_id,
+                    "name": current.name,
+                    "target": current.target,
+                    "note": current.note,
+                    "currentCategory": current.category,
+                    "suggestedCategory": clean_category,
+                    "reason": clean_reason,
+                }
+            )
+        return suggestions
 
     # -- resources ---------------------------------------------------------
     def _list(self, params: Mapping[str, Any]) -> dict[str, Any]:
@@ -603,6 +807,7 @@ class JsonLinesServer:
             settings_store=SettingsStore(self.base_dir / "settings.json"),
             settings=Settings(),
             bookmark_engine=BookmarkSyncEngine(self.base_dir),
+            ai_key_store=AiKeyStore(self.base_dir / AI_KEY_FILENAME),
             load_error=load_error,
         )
         if load_error is None:

@@ -418,7 +418,17 @@ def main() -> int:
     )
 
     # 3c. A blank click *inside* the HUD must keep it open (Phase 18.1): only
-    #     clicks outside the panel dismiss it.
+    #     clicks outside the panel dismiss it. Open a fresh folders HUD without
+    #     expanding (4 rows leave a large blank area; clicking a row would open
+    #     it, which legitimately closes the panel), so the click really lands on
+    #     empty space.
+    key_tap(VK_ESCAPE)
+    wait_until(
+        lambda: window_state(hwnd)["visible"]
+        and not window_state(hwnd)["frameless"]
+    )
+    key_combo(hotkeys["quickFolders"])
+    opened_for_blank = wait_until(lambda: hud_is_open(hwnd))
     rect = wintypes.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
     width = rect.right - rect.left
@@ -427,7 +437,7 @@ def main() -> int:
     time.sleep(0.5)
     record(
         "inside_blank_click_keeps_hud",
-        hud_is_open(hwnd),
+        opened_for_blank and hud_is_open(hwnd),
         "frameless={frameless} visible={visible} size={width}x{height}".format(
             **window_state(hwnd)
         ),

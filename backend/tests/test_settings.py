@@ -8,6 +8,8 @@ import unittest
 from pathlib import Path
 
 from resource_hub_core.settings import (
+    DEFAULT_AI_BASE_URL,
+    DEFAULT_AI_MODEL,
     DEFAULT_BOOKMARK_DELETE_MODE,
     DEFAULT_HOTKEY_ID,
     DEFAULT_LANGUAGE,
@@ -200,6 +202,87 @@ class SettingsNormalizeTests(unittest.TestCase):
         self.assertFalse(settings.global_hotkey_enabled)
         self.assertTrue(settings.launch_at_startup)
 
+    # -- Phase 22: AI settings --------------------------------------------
+    def test_ai_defaults(self) -> None:
+        settings = Settings()
+        # Opt-in: AI suggestions must stay off until the user enables them.
+        self.assertFalse(settings.ai_enabled)
+        self.assertEqual(DEFAULT_AI_BASE_URL, "https://api.deepseek.com")
+        self.assertEqual(DEFAULT_AI_MODEL, "deepseek-chat")
+        self.assertEqual(settings.ai_base_url, DEFAULT_AI_BASE_URL)
+        self.assertEqual(settings.ai_model, DEFAULT_AI_MODEL)
+
+    def test_ai_settings_are_normalised(self) -> None:
+        settings = Settings.normalize(
+            {
+                "aiEnabled": True,
+                "aiBaseUrl": "  https://api.example.com/v1  ",
+                "aiModel": "  deepseek-reasoner  ",
+            }
+        )
+        self.assertTrue(settings.ai_enabled)
+        self.assertEqual(settings.ai_base_url, "https://api.example.com/v1")
+        self.assertEqual(settings.ai_model, "deepseek-reasoner")
+
+    def test_http_ai_base_url_is_allowed(self) -> None:
+        # A local OpenAI-compatible gateway may be plain HTTP.
+        settings = Settings.normalize({"aiBaseUrl": "http://localhost:8080/v1"})
+        self.assertEqual(settings.ai_base_url, "http://localhost:8080/v1")
+
+    def test_ai_base_url_scheme_is_lowercased(self) -> None:
+        settings = Settings.normalize({"aiBaseUrl": "HTTPS://API.Example.com/v1"})
+        self.assertEqual(settings.ai_base_url, "https://API.Example.com/v1")
+
+    def test_invalid_ai_base_url_falls_back_to_default(self) -> None:
+        for value in (
+            None,
+            "",
+            "   ",
+            "api.deepseek.com",
+            "ftp://example.com",
+            "https://",
+            "http://",
+            "file:///C:/x",
+            "https://api example.com",
+            "http://[::1",
+            42,
+            True,
+            [],
+            {"url": "https://example.com"},
+        ):
+            with self.subTest(value=value):
+                settings = Settings.normalize({"aiBaseUrl": value})
+                self.assertEqual(settings.ai_base_url, DEFAULT_AI_BASE_URL)
+
+    def test_invalid_ai_model_falls_back_to_default(self) -> None:
+        for value in (None, "", "   ", 42, True, [], {}):
+            with self.subTest(value=value):
+                settings = Settings.normalize({"aiModel": value})
+                self.assertEqual(settings.ai_model, DEFAULT_AI_MODEL)
+
+    def test_non_bool_ai_enabled_is_ignored(self) -> None:
+        for value in (None, "yes", 1, 0, [], {}):
+            with self.subTest(value=value):
+                settings = Settings.normalize({"aiEnabled": value})
+                self.assertFalse(settings.ai_enabled)
+        self.assertTrue(Settings.normalize({"aiEnabled": True}).ai_enabled)
+        self.assertFalse(Settings.normalize({"aiEnabled": False}).ai_enabled)
+
+    def test_ai_settings_round_trip(self) -> None:
+        original = Settings(
+            ai_enabled=True,
+            ai_base_url="https://api.example.com/v1",
+            ai_model="deepseek-reasoner",
+        )
+        payload = original.to_json()
+        self.assertIs(payload["aiEnabled"], True)
+        self.assertEqual(payload["aiBaseUrl"], "https://api.example.com/v1")
+        self.assertEqual(payload["aiModel"], "deepseek-reasoner")
+        self.assertEqual(Settings.normalize(payload), original)
+        # The API key is never a settings field: settings.json stays plain JSON.
+        self.assertNotIn("apiKey", payload)
+        self.assertNotIn("aiKey", payload)
+
 
 class SettingsStoreTests(unittest.TestCase):
     def test_load_without_file_returns_defaults_and_writes_nothing(self) -> None:
@@ -241,6 +324,22 @@ class SettingsStoreTests(unittest.TestCase):
             )
             store.save(original)
             self.assertEqual(store.load(), original)
+
+    def test_ai_settings_persist_through_settings_store(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.json"
+            store = SettingsStore(path)
+            original = Settings(
+                ai_enabled=True,
+                ai_base_url="https://api.example.com/v1",
+                ai_model="deepseek-reasoner",
+            )
+            store.save(original)
+            self.assertEqual(store.load(), original)
+            # The persisted file is plain JSON, but it holds no key material.
+            text = path.read_text(encoding="utf-8")
+            self.assertIn('"aiBaseUrl": "https://api.example.com/v1"', text)
+            self.assertNotIn("apiKey", text)
 
     def test_hand_edited_file_never_breaks_loading(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

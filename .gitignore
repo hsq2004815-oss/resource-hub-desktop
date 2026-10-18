@@ -25,3 +25,5 @@ release/
 # Local tooling caches
 .codegraph/
 .workbuddy-ai/
+# Phase 22: DPAPI-encrypted AI key (never commit)
+/.resourcehub-ai-key

@@ -116,6 +116,8 @@ const bool kDefaultBookmarkSyncEnabled = true;
 const String kDefaultBookmarkCustomDir = '';
 const String kDefaultBookmarkDeleteMode = 'ask';
 const bool kDefaultShellContextMenuEnabled = true;
+const String kDefaultAiBaseUrl = 'https://api.deepseek.com';
+const String kDefaultAiModel = 'deepseek-chat';
 
 /// `ask` = ask per delete, `remove` = also remove the browser bookmark,
 /// `keep` = only delete locally (Phase 18).
@@ -135,6 +137,9 @@ class AppSettings {
     this.bookmarkCustomDir = kDefaultBookmarkCustomDir,
     this.bookmarkDeleteMode = kDefaultBookmarkDeleteMode,
     this.shellContextMenuEnabled = kDefaultShellContextMenuEnabled,
+    this.aiEnabled = false,
+    this.aiBaseUrl = kDefaultAiBaseUrl,
+    this.aiModel = kDefaultAiModel,
     this.launchAtStartup = false,
   });
 
@@ -161,6 +166,12 @@ class AppSettings {
 
   /// Phase 19: show "添加到抽屉" in the Explorer folder context menu.
   final bool shellContextMenuEnabled;
+
+  /// Phase 22: DeepSeek-compatible category suggestions (opt-in, off by
+  /// default). The API key itself lives in an encrypted file, not here.
+  final bool aiEnabled;
+  final String aiBaseUrl;
+  final String aiModel;
   final bool launchAtStartup;
 
   AppSettings copyWith({
@@ -173,6 +184,9 @@ class AppSettings {
     String? bookmarkCustomDir,
     String? bookmarkDeleteMode,
     bool? shellContextMenuEnabled,
+    bool? aiEnabled,
+    String? aiBaseUrl,
+    String? aiModel,
     bool? launchAtStartup,
   }) {
     return AppSettings(
@@ -187,6 +201,9 @@ class AppSettings {
       bookmarkDeleteMode: bookmarkDeleteMode ?? this.bookmarkDeleteMode,
       shellContextMenuEnabled:
           shellContextMenuEnabled ?? this.shellContextMenuEnabled,
+      aiEnabled: aiEnabled ?? this.aiEnabled,
+      aiBaseUrl: aiBaseUrl ?? this.aiBaseUrl,
+      aiModel: aiModel ?? this.aiModel,
       launchAtStartup: launchAtStartup ?? this.launchAtStartup,
     );
   }
@@ -201,6 +218,9 @@ class AppSettings {
         'bookmarkCustomDir': bookmarkCustomDir,
         'bookmarkDeleteMode': bookmarkDeleteMode,
         'shellContextMenuEnabled': shellContextMenuEnabled,
+        'aiEnabled': aiEnabled,
+        'aiBaseUrl': aiBaseUrl,
+        'aiModel': aiModel,
         'launchAtStartup': launchAtStartup,
       };
 
@@ -221,6 +241,9 @@ class AppSettings {
           kDefaultBookmarkDeleteMode,
       shellContextMenuEnabled: json['shellContextMenuEnabled'] as bool? ??
           kDefaultShellContextMenuEnabled,
+      aiEnabled: json['aiEnabled'] as bool? ?? false,
+      aiBaseUrl: json['aiBaseUrl'] as String? ?? kDefaultAiBaseUrl,
+      aiModel: json['aiModel'] as String? ?? kDefaultAiModel,
       launchAtStartup: json['launchAtStartup'] as bool? ?? false,
     );
   }
@@ -508,3 +531,76 @@ class DeleteOutcome {
   }
 }
 
+/// Result of `ai.status` (Phase 22).
+class AiStatus {
+  const AiStatus({
+    this.enabled = false,
+    this.configured = false,
+    this.baseUrl = kDefaultAiBaseUrl,
+    this.model = kDefaultAiModel,
+  });
+
+  final bool enabled;
+  final bool configured;
+  final String baseUrl;
+  final String model;
+
+  factory AiStatus.fromJson(Map<String, dynamic> json) {
+    return AiStatus(
+      enabled: json['enabled'] == true,
+      configured: json['configured'] == true,
+      baseUrl: json['baseUrl'] as String? ?? kDefaultAiBaseUrl,
+      model: json['model'] as String? ?? kDefaultAiModel,
+    );
+  }
+}
+
+/// One AI category suggestion for an uncategorized resource (Phase 22).
+class AiSuggestion {
+  const AiSuggestion({
+    required this.mode,
+    required this.id,
+    required this.name,
+    required this.target,
+    this.note = '',
+    this.currentCategory = '',
+    required this.suggestedCategory,
+    this.reason = '',
+  });
+
+  final ViewMode mode;
+  final String id;
+  final String name;
+
+  /// Path for folders, URL for links (echoed by the backend so the update can
+  /// be applied without relying on a possibly stale local list).
+  final String target;
+  final String note;
+  final String currentCategory;
+  final String suggestedCategory;
+  final String reason;
+
+  factory AiSuggestion.fromJson(Map<String, dynamic> json) {
+    return AiSuggestion(
+      mode: json['mode'] == 'folders' ? ViewMode.folders : ViewMode.links,
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      target: json['target'] as String? ?? '',
+      note: json['note'] as String? ?? '',
+      currentCategory: json['currentCategory'] as String? ?? '',
+      suggestedCategory: json['suggestedCategory'] as String? ?? '',
+      reason: json['reason'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'mode': mode.name,
+        'id': id,
+        'name': name,
+        'target': target,
+        'note': note,
+        'currentCategory': currentCategory,
+        'suggestedCategory': suggestedCategory,
+        'reason': reason,
+      };
+}
