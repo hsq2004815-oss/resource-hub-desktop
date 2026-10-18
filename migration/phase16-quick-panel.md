@@ -241,3 +241,24 @@ cd ..; D:\miniconda3\python.exe migration\tools\verify_quick_panel.py
 | Flutter 测试 | **60 / 60**（新增"点击面板空白关闭"） |
 | `verify_quick_panel.py` | 7 / 7 PASS（含 `foreground=True`） |
 | `verify_shell.py` | 9 / 9 PASS |
+
+---
+
+## 9. 修复记录 — Phase 16.3：悬停瞬间的灰色阴影（用户反馈）
+
+**现象**：鼠标移到行上的一瞬间，整行出现灰色阴影，然后才变成浅蓝高亮。
+
+**根因**：行的 `AnimatedContainer` 未悬停时用的是 `Colors.transparent`（透明黑），悬停时插值到浅色背景；
+Flutter 的 `Color.lerp` 会逐通道插值，中途得到"半透明深灰"，盖在浅色面板上就是那一下灰色阴影。
+（16.2 已禁用 Material ink 的深色 hover/highlight，这一下灰色是背景插值本身。）
+
+**修复**：未悬停底色从 `Colors.transparent` 改为**不透明的面板色** `scheme.surfaceContainerLow`：
+视觉上完全一样（行与面板同色），但插值只发生在浅色之间，不再经过深灰。
+
+**验证**：
+
+- 实机截图：进入行 30 ms 时仍是面板色，350 ms 为浅蓝 hover，无灰色帧；
+- 1 kHz 区域采样：进入行的全过程行背景亮度保持 >730（灰色帧会 <640），`dark-ish frames = 0`；
+- Flutter 测试 60 / 60；`verify_quick_panel.py` 7 / 7。
+
+截图：`migration/screenshots/phase16-hover.png`。

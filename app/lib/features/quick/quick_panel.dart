@@ -822,16 +822,21 @@ class _QuickPanelState extends State<QuickPanel> {
 
     final bool selected = row.key == selectedKey;
     final bool hovered = row.key == _hoveredKey;
+    // Every state is opaque and starts from the panel colour: animating from
+    // Colors.transparent interpolates through a translucent dark grey and shows
+    // exactly the "grey shadow for a moment" the user reported. The un-hovered
+    // colour is the panel colour, so it still looks transparent.
+    final Color panelColor = scheme.surfaceContainerLow;
     final Color background;
     if (selected) {
       background = scheme.primaryContainer;
     } else if (hovered) {
       background = Color.alphaBlend(
         scheme.primary.withValues(alpha: 0.05),
-        scheme.surfaceContainerLow,
+        panelColor,
       );
     } else {
-      background = Colors.transparent;
+      background = panelColor;
     }
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final Color favoriteColor =
