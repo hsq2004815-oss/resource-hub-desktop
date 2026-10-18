@@ -24,6 +24,7 @@
 | [`phase16-quick-panel.md`](phase16-quick-panel.md) | 快捷键直达树状图：窗口变身 480×600 HUD、三组可配置热键、网站树/文件夹树、输入过滤 |
 | [`phase17-bookmark-sync.md`](phase17-bookmark-sync.md) | 浏览器书签自动同步：只读 Chrome/Edge 本地书签、文件夹做分类、只新增、启动导入 + 监听、设置开关与自定义目录 |
 | [`phase18-bookmark-extension.md`](phase18-bookmark-extension.md) | 双向书签同步：浏览器扩展 + 本机回环桥，工具删除→浏览器取消收藏，浏览器删除/改名→工具同步 |
+| [`phase19-context-menu.md`](phase19-context-menu.md) | 资源管理器右键菜单：右键文件夹添加到资源库并弹窗选中；设置里可开关（Win11 在「显示更多选项」） |
 | [`adr/ADR-001-tray-hotkey-ownership.md`](adr/ADR-001-tray-hotkey-ownership.md) | 托盘/热键归属、导入导出入口、数据覆盖风险 |
 | [`adr/ADR-002-native-shell-ownership.md`](adr/ADR-002-native-shell-ownership.md) | Windows 壳层归属（runner vs 后端） |
 
@@ -35,10 +36,10 @@ Python 后端负责数据读写、全局热键、导入导出与路径操作，�
 ## 验证入口
 
 ```powershell
-# 后端 269 个测试
+# 后端 271 个测试
 cd backend; D:\miniconda3\python.exe -m unittest discover -s tests -t .
 
-# 前端 analyze + 67 个测试
+# 前端 analyze + 69 个测试
 cd ..\app; flutter analyze; flutter test
 
 # 实机壳层（关窗→托盘、热键、二次启动、拖拽)
@@ -49,6 +50,9 @@ D:\miniconda3\python.exe migration\tools\verify_quick_panel.py
 
 # 实机浏览器书签同步（临时复制发布包 + 假浏览器配置，不碰真实数据目录）
 D:\miniconda3\python.exe migration\tools\verify_bookmark_sync.py
+
+# 实机资源管理器右键菜单（注册表 + --add-folder；会临时改数据并还原）
+D:\miniconda3\python.exe migration\tools\verify_context_menu.py
 
 # 端到端双向书签同步（真后端 + 模拟扩展，不启动浏览器）
 D:\miniconda3\python.exe migration\tools\verify_bookmark_extension.py

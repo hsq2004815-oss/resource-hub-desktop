@@ -68,6 +68,23 @@ bool HasCommandLineFlag(const wchar_t* flag) {
   return command_line.find(flag) != std::wstring::npos;
 }
 
+// Phase 19: value after `--add-folder`, or an empty string.
+std::wstring FindAddFolderArgument() {
+  int argc = 0;
+  wchar_t** argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
+  std::wstring result;
+  if (argv != nullptr) {
+    for (int i = 1; i + 1 < argc; ++i) {
+      if (::wcscmp(argv[i], kAddFolderFlag) == 0) {
+        result = argv[i + 1];
+        break;
+      }
+    }
+    ::LocalFree(argv);
+  }
+  return result;
+}
+
 // Reads an integer field from a map argument; returns |fallback| if absent.
 int MapInt(const flutter::EncodableMap& map, const char* key, int fallback) {
   auto it = map.find(flutter::EncodableValue(key));
@@ -104,7 +121,9 @@ std::wstring MapString(const flutter::EncodableMap& map,
 }  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
-    : project_(project) {}
+    : project_(project) {
+  pending_add_folder_ = FindAddFolderArgument();
+}
 
 FlutterWindow::~FlutterWindow() {}
 
@@ -300,6 +319,37 @@ void FlutterWindow::RegisterChannels() {
         if (method == "isLaunchAtStartup") {
           result->Success(
               flutter::EncodableValue(native_shell::GetLaunchAtStartup()));
+          return;
+        }
+
+        // -- Phase 19: Explorer context menu -------------------------------
+        if (method == "shellAddReady") {
+          shell_add_ready_ = true;
+          if (window_channel_ && !pending_add_folder_.empty()) {
+            const std::wstring path = pending_add_folder_;
+            pending_add_folder_.clear();
+            window_channel_->InvokeMethod(
+                "addFolderPath",
+                std::make_unique<flutter::EncodableValue>(
+                    Utf8FromUtf16(path.c_str())));
+          }
+          result->Success();
+          return;
+        }
+        if (method == "setShellContextMenuEnabled") {
+          const auto* enabled = std::get_if<bool>(call.arguments());
+          if (enabled == nullptr) {
+            result->Error("bad_args",
+                          "setShellContextMenuEnabled expects a bool");
+            return;
+          }
+          result->Success(flutter::EncodableValue(
+              native_shell::SetShellContextMenuEnabled(*enabled)));
+          return;
+        }
+        if (method == "isShellContextMenuEnabled") {
+          result->Success(flutter::EncodableValue(
+              native_shell::GetShellContextMenuEnabled()));
           return;
         }
 
@@ -579,6 +629,16 @@ void FlutterWindow::NotifyQuickDismissed() {
   window_channel_->InvokeMethod("quickDismissed", nullptr);
 }
 
+void FlutterWindow::HandleAddFolderRequest(const std::wstring& path) {
+  if (!shell_add_ready_ || !window_channel_) {
+    pending_add_folder_ = path;
+    return;
+  }
+  window_channel_->InvokeMethod(
+      "addFolderPath",
+      std::make_unique<flutter::EncodableValue>(Utf8FromUtf16(path.c_str())));
+}
+
 void FlutterWindow::StartQuickForegroundWatch() {
   HWND handle = GetHandle();
   if (handle == nullptr) {
@@ -732,6 +792,26 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // Phase 19: a second instance forwards an Explorer folder here.
+  if (message == WM_COPYDATA) {
+    const auto* data = reinterpret_cast<const COPYDATASTRUCT*>(lparam);
+    if (data != nullptr && data->dwData == kAddFolderCopyData &&
+        data->lpData != nullptr &&
+        data->cbData >= static_cast<DWORD>(sizeof(wchar_t))) {
+      const size_t count =
+          static_cast<size_t>(data->cbData) / sizeof(wchar_t);
+      std::wstring path(static_cast<const wchar_t*>(data->lpData), count);
+      while (!path.empty() && path.back() == L'\0') {
+        path.pop_back();
+      }
+      if (!path.empty()) {
+        HandleAddFolderRequest(path);
+        return TRUE;
+      }
+    }
+    return FALSE;
+  }
+
   // A second launch asks the running instance to come to the front.
   if (message == kWakeMessage) {
     if (quick_mode_) {

@@ -146,6 +146,7 @@ class _HomePageState extends State<HomePage> {
   /// runner restores that state on close, so Esc returns to where the user was.
   bool _quickReturnVisible = false;
   StreamSubscription<void>? _quickDismissSubscription;
+  StreamSubscription<String>? _shellAddSubscription;
 
   /// Phase 17: suppress the automatic "imported N sites" status while a manual
   /// sync is already reporting its own result.
@@ -173,6 +174,11 @@ class _HomePageState extends State<HomePage> {
     // the tray icon is clicked, or Alt+F4 is pressed (Phase 16).
     _quickDismissSubscription =
         NativeShell.quickDismissals.listen((_) => unawaited(_closeQuick()));
+    // Phase 19: Explorer context-menu entries are forwarded by the runner.
+    _shellAddSubscription = NativeShell.addFolderRequests.listen(
+      (String path) => unawaited(_handleShellAddFolder(path)),
+    );
+    unawaited(NativeShell.shellAddReady());
     // Shell file drops arrive from the runner (WM_DROPFILES -> method channel).
     _dropSubscription = NativeShell.drops.listen(_handleDropPaths);
     _reloadAll();
@@ -191,6 +197,7 @@ class _HomePageState extends State<HomePage> {
     _eventSubscription?.cancel();
     _dropSubscription?.cancel();
     _quickDismissSubscription?.cancel();
+    _shellAddSubscription?.cancel();
     _search.dispose();
     _searchFocus.dispose();
     _listScroll.dispose();
@@ -1076,6 +1083,105 @@ class _HomePageState extends State<HomePage> {
     } catch (error) {
       _setStatus(_Status(text: '$error'));
       return null;
+    }
+  }
+
+  // -- Phase 19: add a folder from the Explorer context menu ---------------
+  String _folderKey(String path) {
+    String value = path.trim();
+    while (value.length > 1 &&
+        (value.endsWith('\\') || value.endsWith('/'))) {
+      value = value.substring(0, value.length - 1);
+    }
+    return value.toLowerCase();
+  }
+
+  String _folderLabel(String path) {
+    String value = path.trim();
+    while (value.length > 1 &&
+        (value.endsWith('\\') || value.endsWith('/'))) {
+      value = value.substring(0, value.length - 1);
+    }
+    final int slash = math.max(value.lastIndexOf('\\'), value.lastIndexOf('/'));
+    final String label = slash >= 0 ? value.substring(slash + 1) : value;
+    return label.isEmpty ? value : label;
+  }
+
+  ResourceItem? _findFolderByPath(String key) {
+    for (final ResourceItem item in _folders) {
+      if (_folderKey(item.path) == key) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  /// Adds [rawPath] as a folder resource and reveals it: Explorer's context
+  /// menu launches the exe with `--add-folder`, a second instance forwards the
+  /// path over WM_COPYDATA, and the runner publishes it on the window channel.
+  Future<void> _handleShellAddFolder(String rawPath) async {
+    final String path = rawPath.trim();
+    if (path.isEmpty) {
+      return;
+    }
+    await WindowControl.show();
+    if (!mounted) {
+      return;
+    }
+    final String key = _folderKey(path);
+    ResourceItem? existing = _findFolderByPath(key);
+    if (existing == null) {
+      try {
+        await _reload(ViewMode.folders);
+      } on BackendException {
+        // The add below reports a real failure; a stale list is not fatal.
+      }
+      if (!mounted) {
+        return;
+      }
+      existing = _findFolderByPath(key);
+    }
+    if (existing != null) {
+      setState(() {
+        _mode = ViewMode.folders;
+        _selectedId = existing!.id;
+        _detailOpen = false;
+        _categoryFilter = kAllCategories;
+        _query = '';
+        _search.clear();
+      });
+      _setStatus(
+        _Status(key: 'shell_folder_exists', args: <Object?>[existing.name]),
+      );
+      return;
+    }
+    try {
+      final ResourceItem saved = await _repo.add(
+        ViewMode.folders,
+        name: _folderLabel(path),
+        target: path,
+      );
+      await _reload(ViewMode.folders);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _mode = ViewMode.folders;
+        _selectedId = saved.id;
+        _detailOpen = false;
+        _categoryFilter = kAllCategories;
+        _query = '';
+        _search.clear();
+      });
+      _setStatus(
+        _Status(
+          key: 'shell_folder_added',
+          args: <Object?>[saved.name],
+          tone: StatusTone.success,
+        ),
+      );
+    } on BackendException catch (error) {
+      _setStatus(_Status.fromError(error));
     }
   }
 

@@ -1,6 +1,9 @@
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <shellapi.h>
 #include <windows.h>
+
+#include <string>
 
 #include "flutter_window.h"
 #include "utils.h"
@@ -18,6 +21,22 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
+  // The Explorer context-menu entry passes the selected folder after the flag.
+  std::wstring add_folder;
+  {
+    int argc = 0;
+    wchar_t** argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
+    if (argv != nullptr) {
+      for (int i = 1; i + 1 < argc; ++i) {
+        if (::wcscmp(argv[i], kAddFolderFlag) == 0) {
+          add_folder = argv[i + 1];
+          break;
+        }
+      }
+      ::LocalFree(argv);
+    }
+  }
+
   // Single instance: the second launch only wakes the window that already
   // exists. Without this the two instances would spawn two backends that fight
   // over the same global hotkey and data files.
@@ -27,6 +46,20 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     const UINT wake_message = ::RegisterWindowMessageW(kShowWindowMessageName);
     if (HWND existing =
             ::FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", nullptr)) {
+      // Phase 19: hand the folder to the running instance before waking it, so
+      // the add is processed even while the window is hidden in the tray.
+      if (!add_folder.empty()) {
+        COPYDATASTRUCT payload = {};
+        payload.dwData = kAddFolderCopyData;
+        payload.cbData =
+            static_cast<DWORD>((add_folder.size() + 1) * sizeof(wchar_t));
+        payload.lpData = const_cast<wchar_t*>(add_folder.c_str());
+        DWORD_PTR ignored_result = 0;
+        ::SendMessageTimeoutW(existing, WM_COPYDATA, 0,
+                              reinterpret_cast<LPARAM>(&payload),
+                              SMTO_ABORTIFHUNG | SMTO_BLOCK, 3000,
+                              &ignored_result);
+      }
       ::PostMessageW(existing, wake_message, 0, 0);
     }
     ::CloseHandle(instance_mutex);

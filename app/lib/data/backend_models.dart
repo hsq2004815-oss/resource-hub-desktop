@@ -115,6 +115,7 @@ const String kDefaultQuickFoldersHotkey = 'Ctrl + Alt + Shift + F';
 const bool kDefaultBookmarkSyncEnabled = true;
 const String kDefaultBookmarkCustomDir = '';
 const String kDefaultBookmarkDeleteMode = 'ask';
+const bool kDefaultShellContextMenuEnabled = true;
 
 /// `ask` = ask per delete, `remove` = also remove the browser bookmark,
 /// `keep` = only delete locally (Phase 18).
@@ -133,6 +134,7 @@ class AppSettings {
     this.bookmarkSyncEnabled = kDefaultBookmarkSyncEnabled,
     this.bookmarkCustomDir = kDefaultBookmarkCustomDir,
     this.bookmarkDeleteMode = kDefaultBookmarkDeleteMode,
+    this.shellContextMenuEnabled = kDefaultShellContextMenuEnabled,
     this.launchAtStartup = false,
   });
 
@@ -156,6 +158,9 @@ class AppSettings {
   /// What a delete does with the browser bookmark (Phase 18):
   /// `ask`, `remove` or `keep`.
   final String bookmarkDeleteMode;
+
+  /// Phase 19: show "添加到常用资源工具" in the Explorer folder context menu.
+  final bool shellContextMenuEnabled;
   final bool launchAtStartup;
 
   AppSettings copyWith({
@@ -167,6 +172,7 @@ class AppSettings {
     bool? bookmarkSyncEnabled,
     String? bookmarkCustomDir,
     String? bookmarkDeleteMode,
+    bool? shellContextMenuEnabled,
     bool? launchAtStartup,
   }) {
     return AppSettings(
@@ -179,6 +185,8 @@ class AppSettings {
       bookmarkSyncEnabled: bookmarkSyncEnabled ?? this.bookmarkSyncEnabled,
       bookmarkCustomDir: bookmarkCustomDir ?? this.bookmarkCustomDir,
       bookmarkDeleteMode: bookmarkDeleteMode ?? this.bookmarkDeleteMode,
+      shellContextMenuEnabled:
+          shellContextMenuEnabled ?? this.shellContextMenuEnabled,
       launchAtStartup: launchAtStartup ?? this.launchAtStartup,
     );
   }
@@ -192,6 +200,7 @@ class AppSettings {
         'bookmarkSyncEnabled': bookmarkSyncEnabled,
         'bookmarkCustomDir': bookmarkCustomDir,
         'bookmarkDeleteMode': bookmarkDeleteMode,
+        'shellContextMenuEnabled': shellContextMenuEnabled,
         'launchAtStartup': launchAtStartup,
       };
 
@@ -210,6 +219,8 @@ class AppSettings {
           kDefaultBookmarkCustomDir,
       bookmarkDeleteMode: json['bookmarkDeleteMode'] as String? ??
           kDefaultBookmarkDeleteMode,
+      shellContextMenuEnabled: json['shellContextMenuEnabled'] as bool? ??
+          kDefaultShellContextMenuEnabled,
       launchAtStartup: json['launchAtStartup'] as bool? ?? false,
     );
   }

@@ -206,6 +206,35 @@ class BridgeEndpointTests(BridgeFixtureTestCase):
         self.assertEqual(status, 400)
         self.assertFalse(body["ok"])
 
+    def test_a_second_bridge_does_not_share_a_port(self) -> None:
+        # A running app already owns one port in the range; the next bridge must
+        # bind a different one instead of silently sharing the listening socket
+        # (Windows SO_REUSEADDR would allow that and deliver requests to the
+        # wrong bridge — regression found in Phase 19).
+        other_service = ResourceService(self.base / "other-app")
+        other_service.load()
+        other_engine = BookmarkSyncEngine(self.base / "other-app")
+        other = BookmarkBridge(
+            other_service,
+            other_engine,
+            writer=FrameWriter(io.StringIO()),
+            lock=threading.RLock(),
+        )
+        try:
+            self.assertTrue(other.start(), "second bridge could not bind")
+            self.assertIsNotNone(other.port)
+            self.assertNotEqual(other.port, self.bridge.port)
+            first_code, first_body = self.request("GET", "/ping")
+            second_code, second_body = http_json(
+                other.port or 0, "GET", "/ping"
+            )
+            self.assertEqual(first_code, 200)
+            self.assertEqual(second_code, 200)
+            self.assertEqual(first_body.get("app"), "resource-hub")
+            self.assertEqual(second_body.get("app"), "resource-hub")
+        finally:
+            other.stop()
+
     def test_stop_closes_the_port_and_is_idempotent(self) -> None:
         port = self.bridge.port
         self.assertIsInstance(port, int)

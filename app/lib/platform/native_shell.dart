@@ -16,6 +16,8 @@ abstract final class NativeShell {
       StreamController<List<String>>.broadcast();
   static final StreamController<void> _quickDismissals =
       StreamController<void>.broadcast();
+  static final StreamController<String> _addFolderRequests =
+      StreamController<String>.broadcast();
   static bool _handlerInstalled = false;
 
   /// Paths dropped onto the window (files and directories, already absolute).
@@ -32,6 +34,23 @@ abstract final class NativeShell {
     _installHandler();
     return _quickDismissals.stream;
   }
+
+  /// Phase 19: an Explorer context-menu entry (or a CLI launch) asks to add
+  /// [path] as a folder resource. The runner buffers it until [shellAddReady].
+  static Stream<String> get addFolderRequests {
+    _installHandler();
+    return _addFolderRequests.stream;
+  }
+
+  /// Tells the runner that the add-folder listener is attached, so it can flush
+  /// a path that arrived before the Flutter UI was ready.
+  static Future<void> shellAddReady() => _invoke<void>('shellAddReady');
+
+  static Future<bool> setShellContextMenuEnabled(bool enabled) async =>
+      await _invoke<bool>('setShellContextMenuEnabled', enabled) ?? false;
+
+  static Future<bool> isShellContextMenuEnabled() async =>
+      await _invoke<bool>('isShellContextMenuEnabled') ?? false;
 
   static Future<String?> pickFolder() => _invoke<String>('pickFolder');
 
@@ -73,6 +92,13 @@ abstract final class NativeShell {
     _channel.setMethodCallHandler((MethodCall call) async {
       if (call.method == 'quickDismissed') {
         _quickDismissals.add(null);
+        return null;
+      }
+      if (call.method == 'addFolderPath') {
+        final Object? path = call.arguments;
+        if (path is String && path.isNotEmpty) {
+          _addFolderRequests.add(path);
+        }
         return null;
       }
       if (call.method != 'dropPaths') {

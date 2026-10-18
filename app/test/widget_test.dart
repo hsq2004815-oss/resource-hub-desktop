@@ -1636,6 +1636,55 @@ void main() {
     expect(find.textContaining('浏览器扩展：已连接'), findsOneWidget);
   });
 
+  testWidgets('explorer add-folder event adds and selects the folder', (
+    WidgetTester tester,
+  ) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    await _emitAddFolder(r'C:\Users\29468\Projects\Alpha');
+    await tester.pumpAndSettle();
+
+    expect(api.folders.map((ResourceItem e) => e.name), contains('Alpha'));
+    final ResourceItem added =
+        api.folders.firstWhere((ResourceItem e) => e.name == 'Alpha');
+    expect(added.path, r'C:\Users\29468\Projects\Alpha');
+    expect(added.category, kUncategorized);
+    expect(find.textContaining('已添加文件夹'), findsOneWidget);
+
+    // The same folder arriving again (different case / trailing slash) must not
+    // create a duplicate row.
+    await _emitAddFolder(r'c:\Users\29468\Projects\Alpha\');
+    await tester.pumpAndSettle();
+    expect(
+      api.folders.where((ResourceItem e) => e.name == 'Alpha').length,
+      1,
+    );
+    expect(find.textContaining('已在资源库中'), findsOneWidget);
+  });
+
+  testWidgets('settings persists the explorer context menu switch', (
+    WidgetTester tester,
+  ) async {
+    final List<AppSettings> saved = <AppSettings>[];
+    await pumpApp(
+      tester,
+      onSettingsChanged: (AppSettings settings) async => saved.add(settings),
+    );
+    await openSettings(tester);
+    expect(find.text('资源管理器右键菜单'), findsOneWidget);
+
+    final Finder toggle =
+        find.byKey(const ValueKey<String>('shell-context-menu-switch'));
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+
+    expect(saved, isNotEmpty);
+    expect(saved.last.shellContextMenuEnabled, isFalse);
+  });
+
   test('translation table keeps zh/en key parity', () {
     final Set<String> zh = kTranslations['zh']!.keys.toSet();
     final Set<String> en = kTranslations['en']!.keys.toSet();
@@ -1656,6 +1705,18 @@ Future<void> _emitDrop(List<String> paths) {
     (ByteData? _) {},
   );
 }
+/// Delivers a runner "add this folder" request (Phase 19).
+Future<void> _emitAddFolder(String path) {
+  return TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .handlePlatformMessage(
+    'resource_hub/window',
+    const StandardMethodCodec().encodeMethodCall(
+      MethodCall('addFolderPath', path),
+    ),
+    (ByteData? _) {},
+  );
+}
+
 /// Delivers the runner's "close the quick panel" notification.
 Future<void> _emitQuickDismiss() {
   return TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

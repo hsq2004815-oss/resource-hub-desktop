@@ -15,6 +15,9 @@ websites, local folders and single files.
 - Browser bookmark sync: new Chrome / Edge bookmarks are imported automatically
   (reads the local bookmark files, read-only); an optional unpacked extension
   adds two-way delete/rename sync (browser extension folder ships with the app)
+- Explorer context menu: right-click any folder (Windows 11: under "Show more
+  options") to add it to the folders list and bring the app to the front; the
+  entry can be switched off in Settings
 - Tray icon, global hotkey (`Ctrl + Alt + Space` by default), optional startup
 - Chinese / English UI, light / dark theme
 - Path health check, open, reveal in Explorer

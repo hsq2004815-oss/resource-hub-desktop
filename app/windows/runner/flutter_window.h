@@ -64,6 +64,10 @@ class FlutterWindow : public Win32Window {
   // second instance, Alt+F4). Dart calls exitQuickMode() and restores its UI.
   void NotifyQuickDismissed();
 
+  // Phase 19: the Explorer context-menu entry asks Dart to add this folder.
+  // Buffered until Dart calls `shellAddReady`, then published as addFolderPath.
+  void HandleAddFolderRequest(const std::wstring& path);
+
   // While the HUD is up, watch the system foreground window. Some activation
   // hand-offs never deliver WM_ACTIVATE(WA_INACTIVE) to us (the panel was forced
   // to the foreground through AttachThreadInput), so a 100 ms timer is the
@@ -107,6 +111,10 @@ class FlutterWindow : public Win32Window {
 
   // Started by the Startup shortcut: stay hidden until the tray is clicked.
   bool startup_hidden_ = false;
+
+  // Phase 19: `--add-folder` / WM_COPYDATA payload waiting for the Dart listener.
+  std::wstring pending_add_folder_;
+  bool shell_add_ready_ = false;
 
   // Tray menu labels, pushed from Dart so they follow the UI language.
   std::wstring tray_toggle_label_ = L"Show / Hide";

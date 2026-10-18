@@ -38,6 +38,8 @@ class Settings:
     bookmark_sync_enabled: bool = True
     bookmark_custom_dir: str = ""
     bookmark_delete_mode: str = DEFAULT_BOOKMARK_DELETE_MODE
+    # Phase 19: Explorer right-click entry "添加到常用资源工具" (HKCU only).
+    shell_context_menu_enabled: bool = True
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -50,6 +52,7 @@ class Settings:
             "bookmarkSyncEnabled": self.bookmark_sync_enabled,
             "bookmarkCustomDir": self.bookmark_custom_dir,
             "bookmarkDeleteMode": self.bookmark_delete_mode,
+            "shellContextMenuEnabled": self.shell_context_menu_enabled,
         }
 
     @classmethod
@@ -106,6 +109,10 @@ class Settings:
         delete_mode = raw.get("bookmarkDeleteMode")
         if isinstance(delete_mode, str) and delete_mode.strip() in DELETE_MODES:
             settings = replace(settings, bookmark_delete_mode=delete_mode.strip())
+
+        shell_menu = raw.get("shellContextMenuEnabled")
+        if isinstance(shell_menu, bool):
+            settings = replace(settings, shell_context_menu_enabled=shell_menu)
 
         return settings
 

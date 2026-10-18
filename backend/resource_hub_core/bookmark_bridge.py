@@ -384,7 +384,11 @@ class _BridgeHTTPServer(ThreadingHTTPServer):
     """Loopback-only server whose handler threads never block shutdown."""
 
     daemon_threads = True
-    allow_reuse_address = True
+    # Windows' SO_REUSEADDR lets a second process bind a port that is already
+    # being listened on, so two bridges would silently share 47821 and requests
+    # would hit the wrong (or the running app's) queue. Refuse to reuse instead:
+    # the start loop then falls through to the next free port.
+    allow_reuse_address = False
 
 
 _INVALID_JSON = object()

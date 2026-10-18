@@ -747,6 +747,40 @@ class _SettingsDialogState extends State<SettingsDialog> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: <Widget>[
+                                Text(t.tx('settings_shell_menu'),
+                                    style: text.bodyMedium),
+                                const SizedBox(height: 2),
+                                Text(
+                                  t.tx('settings_shell_menu_hint'),
+                                  style: text.bodySmall?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Switch(
+                            key: const ValueKey<String>(
+                              'shell-context-menu-switch',
+                            ),
+                            value: _settings.shellContextMenuEnabled,
+                            onChanged: (bool value) => unawaited(
+                              _apply(
+                                _settings.copyWith(
+                                  shellContextMenuEnabled: value,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
                                 Text(t.t('settings_startup'),
                                     style: text.bodyMedium),
                                 const SizedBox(height: 2),

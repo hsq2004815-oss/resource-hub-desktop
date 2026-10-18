@@ -166,6 +166,26 @@ class SettingsNormalizeTests(unittest.TestCase):
                     Settings(bookmark_delete_mode=value),
                 )
 
+    def test_shell_context_menu_setting_round_trip(self) -> None:
+        self.assertTrue(Settings().shell_context_menu_enabled)
+
+        payload = Settings(shell_context_menu_enabled=False).to_json()
+        self.assertIs(payload["shellContextMenuEnabled"], False)
+        self.assertEqual(
+            Settings.normalize(payload),
+            Settings(shell_context_menu_enabled=False),
+        )
+        enabled_payload = Settings(shell_context_menu_enabled=True).to_json()
+        self.assertEqual(
+            Settings.normalize(enabled_payload),
+            Settings(shell_context_menu_enabled=True),
+        )
+        # Non-bool values fall back to the default instead of raising.
+        for value in (None, "yes", 0, 1, [], {}):
+            with self.subTest(value=value):
+                settings = Settings.normalize({"shellContextMenuEnabled": value})
+                self.assertTrue(settings.shell_context_menu_enabled)
+
     def test_non_bool_flags_are_ignored(self) -> None:
         settings = Settings.normalize(
             {"globalHotkeyEnabled": "yes", "launchAtStartup": 1}

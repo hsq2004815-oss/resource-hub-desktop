@@ -111,6 +111,10 @@ class _ResourceHubAppState extends State<ResourceHubApp> {
     if (settings.launchAtStartup) {
       unawaited(NativeShell.setLaunchAtStartup(true));
     }
+    // Phase 19: the Explorer context-menu entry is owned by the runner (HKCU).
+    unawaited(NativeShell.setShellContextMenuEnabled(
+      settings.shellContextMenuEnabled,
+    ));
     return connection;
   }
 
@@ -138,6 +142,9 @@ class _ResourceHubAppState extends State<ResourceHubApp> {
     _syncWindowStrings(_language);
     // Settings are the source of truth for the Startup shortcut.
     unawaited(NativeShell.setLaunchAtStartup(saved.launchAtStartup));
+    unawaited(NativeShell.setShellContextMenuEnabled(
+      saved.shellContextMenuEnabled,
+    ));
     try {
       final HotkeyStatus status = await connection.repository.startHotkey();
       if (mounted) {

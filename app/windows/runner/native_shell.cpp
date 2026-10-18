@@ -85,6 +85,54 @@ std::wstring ExecutablePath() {
   }
 }
 
+// Phase 19: HKCU Explorer folder context-menu entry.
+constexpr wchar_t kShellMenuKey[] =
+    L"Software\\Classes\\Directory\\shell\\ResourceHubAddFolder";
+
+bool SetRegistryString(HKEY key, const wchar_t* name, const std::wstring& value) {
+  const DWORD bytes = static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t));
+  return ::RegSetValueExW(key, name, 0, REG_SZ,
+                          reinterpret_cast<const BYTE*>(value.c_str()),
+                          bytes) == ERROR_SUCCESS;
+}
+
+bool CreateShellContextMenu() {
+  const std::wstring executable = ExecutablePath();
+  if (executable.empty()) {
+    return false;
+  }
+  HKEY key = nullptr;
+  if (::RegCreateKeyExW(HKEY_CURRENT_USER, kShellMenuKey, 0, nullptr, 0,
+                        KEY_WRITE, nullptr, &key,
+                        nullptr) != ERROR_SUCCESS) {
+    return false;
+  }
+  // "添加到常用资源工具" written as escapes so the runner stays ASCII-only.
+  const std::wstring label =
+      L"\u6DFB\u52A0\u5230\u5E38\u7528\u8D44\u6E90\u5DE5\u5177";
+  const std::wstring icon = L"\"" + executable + L"\",0";
+  const bool values_ok = SetRegistryString(key, nullptr, label) &&
+                         SetRegistryString(key, L"Icon", icon) &&
+                         SetRegistryString(key, L"Position", L"top");
+  ::RegCloseKey(key);
+  if (!values_ok) {
+    return false;
+  }
+  const std::wstring command_key_path =
+      std::wstring(kShellMenuKey) + L"\\command";
+  HKEY command_key = nullptr;
+  if (::RegCreateKeyExW(HKEY_CURRENT_USER, command_key_path.c_str(), 0, nullptr,
+                        0, KEY_WRITE, nullptr, &command_key,
+                        nullptr) != ERROR_SUCCESS) {
+    return false;
+  }
+  const std::wstring command =
+      L"\"" + executable + L"\" --add-folder \"%1\"";
+  const bool command_ok = SetRegistryString(command_key, nullptr, command);
+  ::RegCloseKey(command_key);
+  return command_ok;
+}
+
 }  // namespace
 
 namespace native_shell {
@@ -208,6 +256,24 @@ bool GetLaunchAtStartup() {
   const std::wstring shortcut = StartupShortcutPath();
   return !shortcut.empty() &&
          ::GetFileAttributesW(shortcut.c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
+bool SetShellContextMenuEnabled(bool enabled) {
+  if (enabled) {
+    return CreateShellContextMenu();
+  }
+  const LONG result = ::RegDeleteTreeW(HKEY_CURRENT_USER, kShellMenuKey);
+  return result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND;
+}
+
+bool GetShellContextMenuEnabled() {
+  HKEY key = nullptr;
+  if (::RegOpenKeyExW(HKEY_CURRENT_USER, kShellMenuKey, 0, KEY_READ, &key) !=
+      ERROR_SUCCESS) {
+    return false;
+  }
+  ::RegCloseKey(key);
+  return true;
 }
 
 bool OpenTarget(const std::wstring& target) {

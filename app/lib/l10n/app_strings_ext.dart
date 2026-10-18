@@ -116,6 +116,11 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
     'settings_bookmarks_extension_disconnected': '浏览器扩展：未连接',
     'settings_bookmarks_extension_hint': '在 Chrome / Edge 扩展页打开开发者模式，加载随包的 bookmark-extension 文件夹，即可双向同步（删除/改名）。',
     'settings_bookmarks_extension_folder': '打开扩展目录',
+    'shell_folder_added': '已添加文件夹：{0}',
+    'shell_folder_exists': '“{0}”已在资源库中',
+    'settings_shell_menu': '资源管理器右键菜单',
+    'settings_shell_menu_hint':
+        '在文件夹上右键（Windows 11 在「显示更多选项」里）即可添加到本工具；关闭后自动移除该菜单项。',
   },
   'en': <String, String>{
     'settings_theme': 'Appearance',
@@ -230,6 +235,11 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
     'settings_bookmarks_extension_hint':
         'Open the extensions page in Chrome / Edge, enable Developer mode and load the shipped bookmark-extension folder for two-way delete/rename sync.',
     'settings_bookmarks_extension_folder': 'Open extension folder',
+    'shell_folder_added': 'Folder added: {0}',
+    'shell_folder_exists': '"{0}" is already in the library',
+    'settings_shell_menu': 'Explorer context menu',
+    'settings_shell_menu_hint':
+        'Right-click a folder (Windows 11: under "Show more options") to add it here. Turning this off removes the menu entry.',
   },
 };
 
