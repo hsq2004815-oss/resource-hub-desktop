@@ -16,6 +16,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from .models import (
     ALL_CATEGORIES,
+    MODES,
     UNCATEGORIZED,
     Folder,
     Resource,
@@ -27,6 +28,20 @@ from .models import (
 )
 from .normalize import comparable_value, normalize_folder_path, normalize_url, now_iso
 from .storage import CorruptDataError, JsonFileStore
+
+#: One-time order migration marker (Phase 8).
+#:
+#: The row order is the JSON array order. Up to Phase 7 the UI pinned favourite
+#: rows to the top, so the array order was only visible *inside* each group.
+#: Manual drag reordering makes the array order the single source of truth, so the
+#: first Phase 8 launch bakes the old "favourites first" display order into the
+#: files, and this marker records that it happened.
+#:
+#: It is a separate file on purpose: the legacy Python app rewrites
+#: ``settings.json`` from a whitelist and would drop an unknown key, after which
+#: the migration would run again and undo the user's manually arranged order.
+ORDER_META_FILENAME = ".resourcehub-meta.json"
+ORDER_VERSION = 1
 
 
 # --- errors ----------------------------------------------------------------
@@ -49,6 +64,10 @@ class DuplicateError(ServiceError):
 
 class NotFoundError(ServiceError):
     """No entry with the requested id."""
+
+
+class ReorderError(ServiceError):
+    """The requested order is not a permutation of the current collection."""
 
 
 # --- result objects --------------------------------------------------------
@@ -127,6 +146,48 @@ class ResourceService:
                 if isinstance(raw, Mapping) and is_complete(mode, raw)
             ]
         self._loaded = True
+        self._migrate_legacy_order()
+
+    def _migrate_legacy_order(self) -> None:
+        """Bake the old "favourites first" display order into the JSON arrays, once.
+
+        Before manual reordering existed the UI sorted favourites to the top on
+        every render, so the stored order was invisible across the boundary. Phase
+        8 keeps the display order identical to the stored order; migrating once
+        keeps the upgrade visually seamless instead of dropping favourites back to
+        their original (often middle-of-the-list) positions.
+
+        A marker that exists but cannot be parsed means "do not migrate": running
+        the migration again would re-pin favourites and destroy a manually
+        arranged order. The marker is repaired so the decision is remembered.
+        """
+        store = JsonFileStore(self.base_dir / ORDER_META_FILENAME)
+        try:
+            meta = store.load_or_none()
+        except CorruptDataError:
+            store.save({"orderVersion": ORDER_VERSION})
+            return
+        if isinstance(meta, Mapping):
+            try:
+                if int(meta.get("orderVersion", 0)) >= ORDER_VERSION:
+                    return
+            except (TypeError, ValueError):
+                store.save({"orderVersion": ORDER_VERSION})
+                return
+        elif meta is not None:
+            # A payload written by some other tool: leave the data alone.
+            store.save({"orderVersion": ORDER_VERSION})
+            return
+
+        for mode in MODES:
+            items = self._items[mode]
+            reordered = [item for item in items if item.favorite] + [
+                item for item in items if not item.favorite
+            ]
+            if [item.id for item in reordered] != [item.id for item in items]:
+                self._items[mode] = reordered
+                self._save(mode)
+        store.save({"orderVersion": ORDER_VERSION})
 
     def _require_loaded(self) -> None:
         if not self._loaded:
@@ -194,11 +255,13 @@ class ResourceService:
         uncategorized_label: str | None = None,
         favorite_mark: str | None = None,
     ) -> tuple[Resource, ...]:
-        """Filter and order the collection the way the list does.
+        """Filter the collection the way the list does.
 
-        Mirrors ``refresh_view`` (``resource_hub.pyw:2520-2555``): category filter,
-        favourites-only filter, substring search over name/kind/target/category/
-        note, then a **stable** favourites-first sort.
+        Mirrors ``refresh_view`` (``resource_hub.pyw:2520-2555``) for the
+        category / favourites-only / substring filters. Phase 8 changed one
+        thing: the result keeps the stored order instead of pinning favourites to
+        the top, because that order is now user-editable (drag reorder) and the
+        two views must show exactly what will be saved.
 
         ``uncategorized_label`` / ``favorite_mark`` let the caller inject the
         current language's display strings so searching for "未分类" still works;
@@ -225,10 +288,7 @@ class ResourceService:
                 if needle not in " ".join(parts).lower():
                     continue
             result.append(item)
-        # sorted() is stable, so insertion order survives inside each group.
-        return tuple(
-            sorted(result, key=lambda entry: 0 if entry.favorite else 1)
-        )
+        return tuple(result)
 
     def check_paths(self, mode: str) -> PathCheckResult:
         """Report entries whose target no longer exists.
@@ -338,6 +398,36 @@ class ResourceService:
         self._items[mode][self._items[mode].index(item)] = updated
         self._save(mode)
         return updated
+
+    def reorder(self, mode: str, item_ids: Sequence[str]) -> tuple[Resource, ...]:
+        """Persist a manual order for a whole collection.
+
+        ``item_ids`` must be a permutation of the current ids. A payload that
+        adds, drops or duplicates entries is rejected instead of silently losing
+        rows — the UI always has the unfiltered collection, so it can send the
+        complete list after any drag (including drags inside a filtered view).
+
+        Insertion order is the only thing reordering changes: ids, categories and
+        favourite flags stay untouched.
+        """
+        self._require_loaded()
+        current = self._items[mode]
+        wanted = [str(item_id) for item_id in item_ids]
+        if len(wanted) != len(current) or len(set(wanted)) != len(wanted):
+            raise ReorderError(
+                "reorder_failed",
+                f"expected {len(current)} unique ids, got {len(wanted)}",
+            )
+        by_id = {item.id: item for item in current}
+        if set(wanted) != set(by_id):
+            raise ReorderError(
+                "reorder_failed", "ids do not match the current collection"
+            )
+        if wanted == [item.id for item in current]:
+            return tuple(current)
+        self._items[mode] = [by_id[item_id] for item_id in wanted]
+        self._save(mode)
+        return tuple(self._items[mode])
 
     def add_dropped(self, paths: Sequence[str]) -> DropResult:
         """Add dropped files/folders.

@@ -123,6 +123,17 @@ class BackendRepository implements ResourceApi {
   }
 
   @override
+  Future<List<ResourceItem>> reorder(ViewMode mode, List<String> ids) async {
+    final Map<String, dynamic> result = await client.call(
+      'resources.reorder',
+      <String, dynamic>{'mode': mode.name, 'ids': ids},
+    );
+    return (result['items'] as List<dynamic>? ?? <dynamic>[])
+        .map((dynamic e) => ResourceItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
   Future<void> open(ViewMode mode, String id) async {
     await client.call(
       'resources.open',

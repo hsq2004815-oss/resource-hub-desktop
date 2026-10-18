@@ -137,6 +137,7 @@ class Dispatcher:
             "resources.update": self._update,
             "resources.delete": self._delete,
             "resources.favorite": self._favorite,
+            "resources.reorder": self._reorder,
             "resources.checkPaths": self._check_paths,
             "resources.open": self._open,
             "resources.reveal": self._reveal,
@@ -264,6 +265,17 @@ class Dispatcher:
         else:
             item = self.state.service.toggle_favorite(mode, item_id)
         return {"item": item.to_json()}
+
+    def _reorder(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        self._require_loaded()
+        mode = self._require_mode(params)
+        ids = params.get("ids")
+        if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+            raise ProtocolError(
+                "bad_request", "params.ids must be an array of strings"
+            )
+        items = self.state.service.reorder(mode, ids)
+        return {"items": [item.to_json() for item in items]}
 
     def _check_paths(self, params: Mapping[str, Any]) -> dict[str, Any]:
         self._require_loaded()

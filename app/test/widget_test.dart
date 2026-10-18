@@ -161,6 +161,33 @@ class FakeApi implements ResourceApi {
     return updated;
   }
 
+  /// How often the shell persisted a manual order.
+  int reorderCalls = 0;
+
+  @override
+  Future<List<ResourceItem>> reorder(ViewMode mode, List<String> ids) async {
+    reorderCalls += 1;
+    final List<ResourceItem> bucket = _bucket(mode);
+    final Map<String, ResourceItem> byId = <String, ResourceItem>{
+      for (final ResourceItem item in bucket) item.id: item,
+    };
+    final List<ResourceItem> next = <ResourceItem>[
+      for (final String id in ids)
+        if (byId[id] != null) byId[id]!,
+    ];
+    if (next.length != bucket.length) {
+      throw const BackendException(
+        'operation_failed',
+        'ids do not match the collection',
+        key: 'reorder_failed',
+      );
+    }
+    bucket
+      ..clear()
+      ..addAll(next);
+    return List<ResourceItem>.of(next);
+  }
+
   @override
   Future<void> open(ViewMode mode, String id) async {
     openCalls += 1;
@@ -250,6 +277,39 @@ class _RejectingApi extends FakeApi {
     );
   }
 }
+
+/// Fake that accepts a reorder gesture but refuses to persist it.
+class _RejectingReorderApi extends FakeApi {
+  @override
+  Future<List<ResourceItem>> reorder(ViewMode mode, List<String> ids) async {
+    throw const BackendException(
+      'operation_failed',
+      'reorder rejected by the fake',
+      key: 'reorder_failed',
+    );
+  }
+}
+
+/// Drags a reorder grip by [delta] with intermediate moves so the reorderable
+/// list and the custom grid have time to update their insertion target.
+Future<void> dragReorderGrip(
+  WidgetTester tester,
+  Finder grip,
+  Offset delta,
+) async {
+  final TestGesture gesture = await tester.startGesture(tester.getCenter(grip));
+  await tester.pump(const Duration(milliseconds: 40));
+  const int steps = 5;
+  for (int i = 0; i < steps; i++) {
+    await gesture.moveBy(delta / steps.toDouble());
+    await tester.pump(const Duration(milliseconds: 32));
+  }
+  await gesture.up();
+  await tester.pumpAndSettle();
+}
+
+List<String> folderIds(FakeApi api) =>
+    api.folders.map((ResourceItem item) => item.id).toList();
 
 /// Minimal app shell around [HomePage] so tests control language and theme.
 class Harness extends StatefulWidget {
@@ -679,6 +739,189 @@ void main() {
     await tester.tap(find.text('浅色'));
     await tester.pumpAndSettle();
     expect(themeSelector().selected, <ThemeMode>{ThemeMode.light});
+  });
+
+  testWidgets('favourites are no longer pinned above the manual order',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi(
+      folders: <ResourceItem>[
+        ResourceItem(
+          id: 'f2',
+          name: '预算表 2026',
+          path: r'D:\Finance\budget.xlsx',
+          kind: ResourceKind.file,
+          createdAt: DateTime(2026, 4, 19, 14, 5),
+        ),
+        ResourceItem(
+          id: 'f1',
+          name: '项目主目录',
+          path: r'D:\Workspace\resource-hub',
+          kind: ResourceKind.folder,
+          favorite: true,
+          createdAt: DateTime(2026, 4, 21, 9, 0),
+        ),
+        ResourceItem(
+          id: 'f3',
+          name: '字体资源包',
+          path: r'D:\Design\fonts',
+          kind: ResourceKind.folder,
+          createdAt: DateTime(2026, 4, 18, 8, 45),
+        ),
+      ],
+    );
+    await pumpApp(tester, api: api);
+
+    final double plainRow = tester.getTopLeft(find.text('预算表 2026')).dy;
+    final double favouriteRow = tester.getTopLeft(find.text('项目主目录')).dy;
+    expect(
+      favouriteRow,
+      greaterThan(plainRow),
+      reason: 'the stored order must win over the favourite flag',
+    );
+  });
+
+  testWidgets('dragging a list row saves the order and can be undone',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    expect(folderIds(api), <String>['f1', 'f2', 'f3']);
+
+    await dragReorderGrip(
+      tester,
+      find.byIcon(Icons.drag_indicator).first,
+      const Offset(0, 66),
+    );
+
+    expect(api.reorderCalls, 1);
+    expect(folderIds(api), <String>['f2', 'f1', 'f3']);
+    expect(find.text('顺序已更新'), findsOneWidget);
+    expect(find.text('撤销'), findsOneWidget);
+
+    await tester.tap(find.text('撤销'));
+    await tester.pumpAndSettle();
+
+    expect(api.reorderCalls, 2);
+    expect(folderIds(api), <String>['f1', 'f2', 'f3']);
+    expect(find.text('已撤销排序'), findsOneWidget);
+  });
+
+  testWidgets('searching disables reordering', (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(AppSearchField),
+        matching: find.byType(TextField),
+      ),
+      '项目',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('清空搜索后可拖动排序'), findsWidgets);
+    await dragReorderGrip(
+      tester,
+      find.byIcon(Icons.drag_indicator).first,
+      const Offset(0, 66),
+    );
+
+    expect(api.reorderCalls, 0);
+    expect(folderIds(api), <String>['f1', 'f2', 'f3']);
+    expect(find.text('撤销'), findsNothing);
+  });
+
+  testWidgets('dragging a grid card saves the order',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    await tester.tap(find.byIcon(Icons.grid_view_outlined));
+    await tester.pumpAndSettle();
+    expect(find.byType(ResourceGrid), findsOneWidget);
+
+    await dragReorderGrip(
+      tester,
+      find.byIcon(Icons.drag_indicator).first,
+      const Offset(480, 0),
+    );
+
+    expect(api.reorderCalls, 1);
+    expect(folderIds(api), <String>['f2', 'f1', 'f3']);
+    await tester.pump(const Duration(seconds: 6));
+  });
+
+  testWidgets('sort by date added reorders the collection',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi(
+      folders: <ResourceItem>[
+        ResourceItem(
+          id: 'f3',
+          name: '字体资源包',
+          path: r'D:\Design\fonts',
+          kind: ResourceKind.folder,
+          createdAt: DateTime(2026, 4, 18, 8, 45),
+        ),
+        ResourceItem(
+          id: 'f2',
+          name: '预算表 2026',
+          path: r'D:\Finance\budget.xlsx',
+          kind: ResourceKind.file,
+          createdAt: DateTime(2026, 4, 19, 14, 5),
+        ),
+        ResourceItem(
+          id: 'f1',
+          name: '项目主目录',
+          path: r'D:\Workspace\resource-hub',
+          kind: ResourceKind.folder,
+          favorite: true,
+          createdAt: DateTime(2026, 4, 21, 9, 0),
+        ),
+      ],
+    );
+    await pumpApp(tester, api: api);
+    expect(folderIds(api), <String>['f3', 'f2', 'f1']);
+
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('按添加时间排序'));
+    await tester.pumpAndSettle();
+
+    expect(folderIds(api), <String>['f1', 'f2', 'f3']);
+    expect(find.text('已按添加时间排序'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 6));
+  });
+
+  testWidgets('Alt+Down moves the selected row down one position',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    await tester.tap(find.text('项目主目录'));
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.pumpAndSettle();
+
+    expect(api.reorderCalls, 1);
+    expect(folderIds(api), <String>['f2', 'f1', 'f3']);
+    await tester.pump(const Duration(seconds: 6));
+  });
+
+  testWidgets('a rejected reorder restores the previous order',
+      (WidgetTester tester) async {
+    final FakeApi api = _RejectingReorderApi();
+    await pumpApp(tester, api: api);
+
+    await dragReorderGrip(
+      tester,
+      find.byIcon(Icons.drag_indicator).first,
+      const Offset(0, 66),
+    );
+
+    expect(find.text('排序保存失败，已恢复原顺序'), findsOneWidget);
+    expect(find.text('撤销'), findsNothing);
+    expect(folderIds(api), <String>['f1', 'f2', 'f3']);
   });
 
   test('translation table keeps zh/en key parity', () {

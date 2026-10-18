@@ -15,6 +15,14 @@ import '../l10n/strings_scope.dart';
 import '../models/resource_item.dart';
 import '../util/formatters.dart';
 import 'app_card.dart';
+import 'reorder_grip.dart';
+
+/// Moves [item] to [targetIndex] of the visible list *after* removing it.
+///
+/// Both views report this shape: the table converts `ReorderableListView`'s
+/// `(oldIndex, newIndex)` into it, the grid converts its drop slot. The shell
+/// translates it into a full-collection order before saving.
+typedef ResourceMoveCallback = void Function(ResourceItem item, int targetIndex);
 
 /// Callbacks wired into the row context menu. Any null entry hides that item.
 class ResourceTableActions {
@@ -148,6 +156,8 @@ class ResourceTable extends StatelessWidget {
     required this.onSelected,
     required this.actions,
     required this.scrollController,
+    required this.reorderEnabled,
+    required this.onMoveItem,
     this.emptyState,
   });
 
@@ -157,6 +167,10 @@ class ResourceTable extends StatelessWidget {
   final ValueChanged<ResourceItem> onSelected;
   final ResourceTableActions actions;
   final ScrollController scrollController;
+
+  /// False while a search is active (or a reorder is already being saved).
+  final bool reorderEnabled;
+  final ResourceMoveCallback onMoveItem;
   final Widget? emptyState;
 
   List<_Column> _columns(BuildContext context) {
@@ -205,18 +219,49 @@ class ResourceTable extends StatelessWidget {
                   ? (emptyState ?? const SizedBox.shrink())
                   : Scrollbar(
                       controller: scrollController,
-                      child: ListView.builder(
-                        controller: scrollController,
+                      child: ReorderableListView.builder(
+                        scrollController: scrollController,
                         primary: false,
+                        buildDefaultDragHandles: false,
                         itemExtent: AppSizes.tableRowHeight,
                         itemCount: items.length,
+                        // `onReorderItem` reports the insertion index *after*
+                        // the dragged row has been removed, which is exactly the
+                        // position `onMoveItem` expects.
+                        onReorderItem: (int oldIndex, int newIndex) {
+                          if (newIndex == oldIndex) {
+                            return;
+                          }
+                          onMoveItem(items[oldIndex], newIndex);
+                        },
+                        proxyDecorator: (
+                          Widget child,
+                          int index,
+                          Animation<double> animation,
+                        ) {
+                          return AnimatedBuilder(
+                            animation: animation,
+                            builder: (BuildContext context, Widget? _) {
+                              return Material(
+                                elevation: 8,
+                                color: scheme.surfaceContainerHigh,
+                                borderRadius: AppRadius.smAll,
+                                clipBehavior: Clip.antiAlias,
+                                child: child,
+                              );
+                            },
+                          );
+                        },
                         itemBuilder: (BuildContext context, int index) {
                           final ResourceItem item = items[index];
                           return _TableRow(
+                            key: ValueKey<String>(item.id),
+                            index: index,
                             item: item,
                             columns: columns,
                             mode: mode,
                             selected: item.id == selectedId,
+                            reorderEnabled: reorderEnabled,
                             onTap: () => onSelected(item),
                             actions: actions,
                           );
@@ -247,23 +292,25 @@ class _TableHeader extends StatelessWidget {
         border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
       ),
       child: Row(
-        children: columns
-            .map(
-              (_Column column) => _TableCell(
-                column: column,
-                child: Text(
-                  column.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: text.labelSmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.3,
-                  ),
+        children: <Widget>[
+          // Leading grip column: keeps the header aligned with the row handles.
+          const SizedBox(width: AppSizes.tableGripWidth),
+          ...columns.map(
+            (_Column column) => _TableCell(
+              column: column,
+              child: Text(
+                column.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: text.labelSmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.3,
                 ),
               ),
-            )
-            .toList(),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -271,18 +318,23 @@ class _TableHeader extends StatelessWidget {
 
 class _TableRow extends StatefulWidget {
   const _TableRow({
+    super.key,
+    required this.index,
     required this.item,
     required this.columns,
     required this.mode,
     required this.selected,
+    required this.reorderEnabled,
     required this.onTap,
     required this.actions,
   });
 
+  final int index;
   final ResourceItem item;
   final List<_Column> columns;
   final ViewMode mode;
   final bool selected;
+  final bool reorderEnabled;
   final VoidCallback onTap;
   final ResourceTableActions actions;
 
@@ -358,6 +410,19 @@ class _TableRowState extends State<_TableRow> {
               ),
               child: Row(
                 children: <Widget>[
+                  SizedBox(
+                    width: AppSizes.tableGripWidth,
+                    child: Center(
+                      child: ReorderableDragStartListener(
+                        index: widget.index,
+                        enabled: widget.reorderEnabled,
+                        child: ReorderGrip(
+                          visible: _hovered,
+                          enabled: widget.reorderEnabled,
+                        ),
+                      ),
+                    ),
+                  ),
                   _TableCell(
                     column: widget.columns[0],
                     child: Icon(

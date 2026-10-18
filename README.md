@@ -4,7 +4,8 @@ A Windows desktop launcher for the things you use every day: frequently visited
 websites, local folders and single files.
 
 - Two resource types: links (sites) and local paths (folders / files)
-- Search, category filters, favorites pinned to the top
+- Search, category filters, favorites (a star, no longer pinned)
+- Drag rows or cards to arrange the order (list and grid), with a 5-second undo
 - Drag and drop files or folders onto the window to add them
 - Import / export JSON backups (compatible with the legacy Python version)
 - Tray icon, global hotkey (`Ctrl + Alt + Space` by default), optional startup
@@ -87,10 +88,10 @@ so existing data can be migrated as-is.
 
 ```powershell
 cd app
-flutter test                                  # 32 tests: widgets, protocol, JSON
+flutter test                                  # 40 tests: widgets, protocol, JSON
 
 cd backend
-python -m unittest discover -s tests -t .     # 138 tests
+python -m unittest discover -s tests -t .     # 152 tests
 ```
 
 ## Notes

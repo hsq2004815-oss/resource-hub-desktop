@@ -97,6 +97,33 @@ void main() {
     );
   });
 
+  test('resources.reorder persists a reversed order', () async {
+    final Map<String, dynamic> listed =
+        await client.call('resources.list', <String, dynamic>{'mode': 'links'});
+    final List<String> ids = (listed['items'] as List<dynamic>)
+        .map((dynamic e) => (e as Map<String, dynamic>)['id'] as String)
+        .toList();
+    final List<String> reversed = ids.reversed.toList();
+
+    final Map<String, dynamic> result = await client.call(
+      'resources.reorder',
+      <String, dynamic>{'mode': 'links', 'ids': reversed},
+    );
+    expect(
+      (result['items'] as List<dynamic>)
+          .map((dynamic e) => (e as Map<String, dynamic>)['id']),
+      reversed,
+    );
+
+    final Map<String, dynamic> after =
+        await client.call('resources.list', <String, dynamic>{'mode': 'links'});
+    expect(
+      (after['items'] as List<dynamic>)
+          .map((dynamic e) => (e as Map<String, dynamic>)['id']),
+      reversed,
+    );
+  });
+
   test('structured errors surface code and i18n key', () async {
     await expectLater(
       client.call(

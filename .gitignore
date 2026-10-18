@@ -17,6 +17,7 @@ resource_hub_launcher.log
 /sites.json
 /folders.json
 /settings.json
+/.resourcehub-meta.json
 
 # Packaged releases (large binaries; rebuild with build-flutter-release.ps1)
 release/

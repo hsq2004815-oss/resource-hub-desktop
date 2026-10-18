@@ -24,6 +24,11 @@ settings = SettingsStore(Path(r"D:\Apps\ResourceHub\settings.json")).load()
 
 `mode` is `"links"` (sites.json) or `"folders"` (folders.json).
 
+The stored **array order is the display order**. `resources.reorder` accepts the
+complete id list of a collection and persists a new order; `resources.list`
+returns entries in that order (favourites are no longer pinned to the top —
+that changed in Phase 8 so manual drag ordering is the single source of truth).
+
 ## Errors
 
 `ValidationError` / `DuplicateError` carry a **legacy i18n key** (`enter_link_name`,
@@ -52,7 +57,7 @@ except ValidationError as exc:
 D:\miniconda3\python.exe -m unittest discover -s tests -t .
 ```
 
-138 tests, no third-party packages required.
+152 tests, no third-party packages required.
 
 ## Protocol server
 

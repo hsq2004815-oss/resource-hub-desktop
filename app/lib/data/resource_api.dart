@@ -44,6 +44,14 @@ abstract interface class ResourceApi {
 
   Future<ResourceItem> setFavorite(ViewMode mode, String id, {bool? value});
 
+  /// Persists a manual order for [mode].
+  ///
+  /// [ids] must contain every entry of the collection exactly once (the UI
+  /// always holds the unfiltered list, so drags inside a filtered view can send
+  /// the complete order). Reordering never changes ids, categories or favourite
+  /// flags — only the stored array order.
+  Future<List<ResourceItem>> reorder(ViewMode mode, List<String> ids);
+
   Future<void> open(ViewMode mode, String id);
 
   Future<void> reveal(ViewMode mode, String id);

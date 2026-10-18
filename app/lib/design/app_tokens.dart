@@ -92,6 +92,9 @@ abstract final class AppSizes {
   static const double statusBarHeight = 34;
   static const double tableHeaderHeight = 38;
   static const double tableRowHeight = 44;
+
+  /// Leading grip column of the table (the row's drag handle lives here).
+  static const double tableGripWidth = 28;
   static const double iconSm = 16;
   static const double iconMd = 20;
   static const double iconLg = 24;

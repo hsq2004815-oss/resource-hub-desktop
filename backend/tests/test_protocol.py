@@ -56,6 +56,7 @@ class HelloTests(ProtocolTestCase):
         self.assertEqual(result["dataStatus"], "ok")
         self.assertIsNone(result["loadError"])
         self.assertIn("resources.list", result["methods"])
+        self.assertIn("resources.reorder", result["methods"])
         self.assertIn("hotkey.start", result["methods"])
 
     def test_hello_on_corrupt_data(self) -> None:
@@ -143,6 +144,34 @@ class ResourceTests(ProtocolTestCase):
         )["result"]["item"]["id"]
         self.assertTrue(self.call("resources.delete", {"mode": "links", "id": item_id})["result"]["deleted"])
         self.assertFalse(self.call("resources.delete", {"mode": "links", "id": item_id})["result"]["deleted"])
+
+    def test_reorder_roundtrip(self) -> None:
+        listed = self.call("resources.list", {"mode": "links"})["result"]["items"]
+        ids = [item["id"] for item in listed]
+        reversed_ids = list(reversed(ids))
+
+        frame = self.call("resources.reorder", {"mode": "links", "ids": reversed_ids})
+        self.assertTrue(frame["ok"], frame)
+        self.assertEqual(
+            [item["id"] for item in frame["result"]["items"]], reversed_ids
+        )
+        after = self.call("resources.list", {"mode": "links"})["result"]["items"]
+        self.assertEqual([item["id"] for item in after], reversed_ids)
+
+    def test_reorder_rejects_a_partial_id_list(self) -> None:
+        listed = self.call("resources.list", {"mode": "links"})["result"]["items"]
+        frame = self.call(
+            "resources.reorder",
+            {"mode": "links", "ids": [listed[0]["id"]]},
+        )
+        self.assertFalse(frame["ok"])
+        self.assertEqual(frame["error"]["code"], "operation_failed")
+        self.assertEqual(frame["error"]["key"], "reorder_failed")
+
+    def test_reorder_requires_an_id_array(self) -> None:
+        frame = self.call("resources.reorder", {"mode": "links", "ids": "nope"})
+        self.assertFalse(frame["ok"])
+        self.assertEqual(frame["error"]["code"], "bad_request")
 
     def test_check_paths(self) -> None:
         result = self.call("resources.checkPaths", {"mode": "links"})["result"]

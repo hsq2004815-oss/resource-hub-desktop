@@ -67,6 +67,15 @@ class _Status {
   }
 }
 
+/// A manual ordering change that can be reverted from the status bar for a few
+/// seconds. Kept as the previous id order so undo is just another reorder.
+class _UndoAction {
+  const _UndoAction({required this.mode, required this.ids});
+
+  final ViewMode mode;
+  final List<String> ids;
+}
+
 class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
@@ -115,11 +124,22 @@ class _HomePageState extends State<HomePage> {
   ResourceLayout _layout = ResourceLayout.list;
 
   _Status? _status;
+  _UndoAction? _undo;
+  Timer? _undoTimer;
+  bool _reorderSaving = false;
   bool _loading = true;
   String? _loadFailure;
 
   ResourceApi get _repo => widget.api;
   bool get _dataCorrupt => widget.dataCorrupt;
+
+  /// Reordering (drag handles and Alt+Up/Down) needs a complete, unfiltered list:
+  /// a sparse search result has no meaningful global positions.
+  bool get _canReorder =>
+      !_dataCorrupt &&
+      !_loading &&
+      !_reorderSaving &&
+      _query.trim().isEmpty;
 
   @override
   void initState() {
@@ -148,6 +168,7 @@ class _HomePageState extends State<HomePage> {
     _search.dispose();
     _searchFocus.dispose();
     _listScroll.dispose();
+    _undoTimer?.cancel();
     super.dispose();
   }
 
@@ -402,11 +423,9 @@ class _HomePageState extends State<HomePage> {
               : item.copyWith(pathState: state);
         })
         .toList();
-    // Stable favourites-first ordering, matching `service.visible`.
-    return <ResourceItem>[
-      ...filtered.where((ResourceItem item) => item.favorite),
-      ...filtered.where((ResourceItem item) => !item.favorite),
-    ];
+    // Phase 8: the stored order is the display order. Favourites are no longer
+    // pinned, because the user can drag rows into any position.
+    return filtered;
   }
 
   List<String> get _categories {
@@ -430,11 +449,224 @@ class _HomePageState extends State<HomePage> {
     return null;
   }
 
-  void _setStatus(_Status status) {
+  void _setStatus(_Status status, {_UndoAction? undo}) {
     if (!mounted) {
       return;
     }
-    setState(() => _status = status);
+    _undoTimer?.cancel();
+    _undoTimer = null;
+    if (undo != null) {
+      // Status-bar undo lives for five seconds; the next status replaces it.
+      _undoTimer = Timer(const Duration(seconds: 5), () {
+        if (mounted) {
+          setState(() => _undo = null);
+        }
+      });
+    }
+    setState(() {
+      _status = status;
+      _undo = undo;
+    });
+  }
+
+  // -- manual ordering -----------------------------------------------------
+  static bool _sameOrder(List<String> a, List<String> b) {
+    if (a.length != b.length) {
+      return false;
+    }
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Optimistically applies a new full-collection order and persists it.
+  ///
+  /// [ids] must be a permutation of the current collection ids; the backend
+  /// rejects anything else, in which case the previous order is restored. The
+  /// optimistic update keeps the dragged row under the pointer instead of
+  /// waiting for a JSON round-trip.
+  Future<bool> _applyOrder(
+    ViewMode mode,
+    List<String> ids, {
+    required String successKey,
+    bool allowUndo = true,
+  }) async {
+    if (_reorderSaving) {
+      return false;
+    }
+    final List<ResourceItem> bucket = mode.isLinks ? _links : _folders;
+    if (ids.length != bucket.length) {
+      return false;
+    }
+    final List<String> before = <String>[for (final item in bucket) item.id];
+    if (_sameOrder(before, ids)) {
+      _setStatus(_Status(key: successKey, tone: StatusTone.success));
+      return true;
+    }
+    final Map<String, ResourceItem> byId = <String, ResourceItem>{
+      for (final ResourceItem item in bucket) item.id: item,
+    };
+    final List<ResourceItem> next = <ResourceItem>[
+      for (final String id in ids)
+        if (byId[id] != null) byId[id]!,
+    ];
+    if (next.length != bucket.length) {
+      return false;
+    }
+
+    setState(() {
+      _reorderSaving = true;
+      if (mode.isLinks) {
+        _links = next;
+      } else {
+        _folders = next;
+      }
+    });
+    try {
+      await _repo.reorder(mode, ids);
+      if (!mounted) {
+        return false;
+      }
+      setState(() => _reorderSaving = false);
+      _setStatus(
+        _Status(key: successKey, tone: StatusTone.success),
+        undo: allowUndo ? _UndoAction(mode: mode, ids: before) : null,
+      );
+      return true;
+    } on BackendException catch (error) {
+      _restoreOrder(mode, bucket);
+      _setStatus(_Status.fromError(error));
+      return false;
+    } catch (error) {
+      _restoreOrder(mode, bucket);
+      _setStatus(_Status(text: '$error', tone: StatusTone.error));
+      return false;
+    }
+  }
+
+  void _restoreOrder(ViewMode mode, List<ResourceItem> bucket) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _reorderSaving = false;
+      if (mode.isLinks) {
+        _links = bucket;
+      } else {
+        _folders = bucket;
+      }
+    });
+  }
+
+  /// Moves [item] to [targetIndex] of the visible list (index *after* removal)
+  /// and translates that into a full-collection order.
+  Future<void> _handleMoveItem(ResourceItem item, int targetIndex) async {
+    if (!_canReorder) {
+      return;
+    }
+    final List<ResourceItem> visible = _visible;
+    final List<ResourceItem> remaining = <ResourceItem>[
+      for (final ResourceItem entry in visible)
+        if (entry.id != item.id) entry,
+    ];
+    final int clamped = targetIndex.clamp(0, remaining.length);
+    final List<ResourceItem> full = <ResourceItem>[
+      for (final ResourceItem entry in _current)
+        if (entry.id != item.id) entry,
+    ];
+    if (remaining.isEmpty) {
+      full.add(item);
+    } else if (clamped >= remaining.length) {
+      final int anchor = full.indexWhere(
+        (ResourceItem entry) => entry.id == remaining.last.id,
+      );
+      full.insert(anchor + 1, item);
+    } else {
+      final int anchor = full.indexWhere(
+        (ResourceItem entry) => entry.id == remaining[clamped].id,
+      );
+      full.insert(anchor, item);
+    }
+    final bool applied = await _applyOrder(
+      _mode,
+      <String>[for (final ResourceItem entry in full) entry.id],
+      successKey: 'reorder_saved',
+    );
+    if (applied && mounted) {
+      setState(() => _selectedId = item.id);
+    }
+  }
+
+  /// Keyboard alternative to dragging: Alt+Up/Down moves the selected row one
+  /// position at a time.
+  Future<void> _moveSelected(int delta) async {
+    if (!_canReorder) {
+      return;
+    }
+    final ResourceItem? item = _selected;
+    if (item == null) {
+      return;
+    }
+    final int index = _visible.indexWhere(
+      (ResourceItem entry) => entry.id == item.id,
+    );
+    if (index < 0) {
+      return;
+    }
+    final int target = index + delta;
+    if (target < 0 || target >= _visible.length) {
+      return;
+    }
+    await _handleMoveItem(item, target);
+  }
+
+  /// One-shot "newest first" order from the overflow menu. Ties keep their
+  /// current relative order so the result is deterministic.
+  Future<void> _sortByAdded() async {
+    if (_dataCorrupt || _reorderSaving) {
+      return;
+    }
+    final List<ResourceItem> bucket = _current;
+    final List<int> order = List<int>.generate(bucket.length, (int i) => i);
+    order.sort((int a, int b) {
+      final DateTime? left = bucket[a].createdAt;
+      final DateTime? right = bucket[b].createdAt;
+      if (left == null && right == null) {
+        return a.compareTo(b);
+      }
+      if (left == null) {
+        return 1;
+      }
+      if (right == null) {
+        return -1;
+      }
+      final int byDate = right.compareTo(left);
+      return byDate != 0 ? byDate : a.compareTo(b);
+    });
+    await _applyOrder(
+      _mode,
+      <String>[for (final int index in order) bucket[index].id],
+      successKey: 'sort_by_added_done',
+    );
+  }
+
+  Future<void> _undoOrder() async {
+    final _UndoAction? undo = _undo;
+    if (undo == null || _reorderSaving) {
+      return;
+    }
+    _undoTimer?.cancel();
+    _undoTimer = null;
+    setState(() => _undo = null);
+    await _applyOrder(
+      undo.mode,
+      undo.ids,
+      successKey: 'reorder_undone',
+      allowUndo: false,
+    );
   }
 
   // -- mutations ----------------------------------------------------------
@@ -757,7 +989,7 @@ class _HomePageState extends State<HomePage> {
         ? StatusTone.error
         : (status?.tone ?? StatusTone.info);
 
-    return Scaffold(
+    final Widget shell = Scaffold(
       body: Column(
         children: <Widget>[
           AppTopBar(onOpenSettings: _openSettings),
@@ -819,6 +1051,10 @@ class _HomePageState extends State<HomePage> {
                         _handleDelete();
                       },
                     ),
+                    reorderEnabled: _canReorder,
+                    onMoveItem: (ResourceItem item, int targetIndex) =>
+                        unawaited(_handleMoveItem(item, targetIndex)),
+                    onSortByAdded: () => unawaited(_sortByAdded()),
                   ),
           ),
           AppStatusBar(
@@ -826,18 +1062,47 @@ class _HomePageState extends State<HomePage> {
                 _loadFailure ??
                 _defaultStatus(strings),
             tone: tone,
-            trailing: _dataCorrupt
-                ? Text(
-                    strings.tx('read_only_badge'),
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Theme.of(context).colorScheme.error,
-                          fontWeight: FontWeight.w700,
-                        ),
-                  )
-                : null,
+            trailing: _buildStatusTrailing(strings),
           ),
         ],
       ),
     );
+
+    // Keyboard alternative to dragging (Alt+Up / Alt+Down). The bindings live
+    // inside the page, so dialogs with text fields are unaffected.
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.arrowUp, alt: true): () =>
+            unawaited(_moveSelected(-1)),
+        const SingleActivator(LogicalKeyboardKey.arrowDown, alt: true): () =>
+            unawaited(_moveSelected(1)),
+      },
+      child: Focus(autofocus: true, child: shell),
+    );
+  }
+
+  Widget? _buildStatusTrailing(AppStrings strings) {
+    if (_undo != null) {
+      return TextButton(
+        onPressed: () => unawaited(_undoOrder()),
+        style: TextButton.styleFrom(
+          minimumSize: const Size(0, 24),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+        ),
+        child: Text(strings.tx('undo')),
+      );
+    }
+    if (_dataCorrupt) {
+      return Text(
+        strings.tx('read_only_badge'),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: Theme.of(context).colorScheme.error,
+              fontWeight: FontWeight.w700,
+            ),
+      );
+    }
+    return null;
   }
 }

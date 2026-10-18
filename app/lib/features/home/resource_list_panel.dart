@@ -51,6 +51,9 @@ class ResourceListPanel extends StatelessWidget {
     required this.onCheckPaths,
     required this.onImport,
     required this.onExport,
+    required this.reorderEnabled,
+    required this.onMoveItem,
+    required this.onSortByAdded,
   });
 
   final ViewMode mode;
@@ -80,6 +83,14 @@ class ResourceListPanel extends StatelessWidget {
   final VoidCallback onCheckPaths;
   final VoidCallback onImport;
   final VoidCallback onExport;
+
+  /// Dragging is disabled while a search is active and while a reorder is being
+  /// saved; both views show the same dimmed handle.
+  final bool reorderEnabled;
+  final ResourceMoveCallback onMoveItem;
+
+  /// One-shot "sort by date added (newest first)" from the overflow menu.
+  final VoidCallback onSortByAdded;
 
   bool get _hasSelection => selectedId != null;
 
@@ -253,6 +264,33 @@ class ResourceListPanel extends StatelessWidget {
                 onImport: onImport,
                 onExport: onExport,
               ),
+              const SizedBox(width: AppSpacing.xs),
+              PopupMenuButton<String>(
+                tooltip: t.tx('more_actions'),
+                icon: const Icon(Icons.more_vert, size: 18),
+                padding: EdgeInsets.zero,
+                splashRadius: 18,
+                onSelected: (String value) {
+                  if (value == 'sort_by_added') {
+                    onSortByAdded();
+                  }
+                },
+                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                  PopupMenuItem<String>(
+                    value: 'sort_by_added',
+                    child: Row(
+                      children: <Widget>[
+                        const Icon(Icons.sort, size: 16),
+                        const SizedBox(width: AppSpacing.md),
+                        Text(
+                          t.tx('sort_by_added'),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -265,6 +303,8 @@ class ResourceListPanel extends StatelessWidget {
                     selectedId: selectedId,
                     onSelected: onSelected,
                     actions: actions,
+                    reorderEnabled: reorderEnabled,
+                    onMoveItem: onMoveItem,
                     emptyState: emptyState,
                   )
                 : ResourceTable(
@@ -274,6 +314,8 @@ class ResourceListPanel extends StatelessWidget {
                     onSelected: onSelected,
                     actions: actions,
                     scrollController: scrollController,
+                    reorderEnabled: reorderEnabled,
+                    onMoveItem: onMoveItem,
                     emptyState: emptyState,
                   ),
           ),

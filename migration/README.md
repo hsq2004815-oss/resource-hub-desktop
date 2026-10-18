@@ -13,6 +13,7 @@
 | [`phase5b-shell-integration.md`](phase5b-shell-integration.md) | 托盘 / 热键显隐 / 拖拽 / 文件对话框 / 导入导出 / 开机启动 / 单实例 |
 | [`phase6-packaging.md`](phase6-packaging.md) | 打包产物、构建方式、干净环境验证、已知风险 |
 | [`phase7-ui-top-layout.md`](phase7-ui-top-layout.md) | 顶部布局重构（紧凑应用栏、统一表面色、添加资源对话框、列表/网格切换） |
+| [`phase8-drag-reorder.md`](phase8-drag-reorder.md) | 手动拖动排序：数组顺序即顺序、一次性迁移、列表/网格拖拽、撤销、按时间重排 |
 | [`adr/ADR-001-tray-hotkey-ownership.md`](adr/ADR-001-tray-hotkey-ownership.md) | 托盘/热键归属、导入导出入口、数据覆盖风险 |
 | [`adr/ADR-002-native-shell-ownership.md`](adr/ADR-002-native-shell-ownership.md) | Windows 壳层归属（runner vs 后端） |
 
@@ -24,10 +25,10 @@ Python 后端负责数据读写、全局热键、导入导出与路径操作，�
 ## 验证入口
 
 ```powershell
-# 后端 138 个测试
+# 后端 152 个测试
 cd backend; D:\miniconda3\python.exe -m unittest discover -s tests -t .
 
-# 前端 analyze + 32 个测试
+# 前端 analyze + 40 个测试
 cd ..\app; flutter analyze; flutter test
 
 # 实机壳层（关窗→托盘、热键、二次启动、拖拽)

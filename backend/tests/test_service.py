@@ -6,10 +6,14 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from resource_hub_core.models import ALL_CATEGORIES, UNCATEGORIZED
 from resource_hub_core.service import (
+    ORDER_META_FILENAME,
+    ORDER_VERSION,
     DuplicateError,
+    ReorderError,
     ResourceService,
     ServiceError,
     ValidationError,
@@ -253,10 +257,22 @@ class VisibleTests(ServiceTestCase):
         )
         self.service.set_favorite("links", self.b.id, True)
 
-    def test_favorites_come_first_and_order_is_stable(self) -> None:
-        # Insertion order after three adds is [Gamma, Beta, Alpha].
+    def test_order_is_insertion_order_without_pinning_favourites(self) -> None:
+        # Insertion order after three adds is [Gamma, Beta, Alpha]; a favourite
+        # no longer jumps to the top (Phase 8 makes the stored order editable).
         names = [item.name for item in self.service.visible("links")]
-        self.assertEqual(names, ["Beta", "Gamma", "Alpha"])
+        self.assertEqual(names, ["Gamma", "Beta", "Alpha"])
+
+    def test_favourites_keep_their_stored_position(self) -> None:
+        # Beta is the favourite; moving Alpha to the top must leave it in the
+        # middle instead of re-pinning it.
+        self.service.reorder(
+            "links", [self.a.id, self.c.id, self.b.id]
+        )
+        self.assertEqual(
+            [item.name for item in self.service.visible("links")],
+            ["Alpha", "Gamma", "Beta"],
+        )
 
     def test_search_matches_name_target_and_note(self) -> None:
         self.assertEqual(
@@ -389,6 +405,148 @@ class CategoryRenameTests(ServiceTestCase):
         changed = self.service.rename_category("links", "Old", "New")
         self.assertEqual(changed, 2)
         self.assertEqual(self.service.categories("links"), ("New",))
+
+
+class ReorderTests(ServiceTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        (self.dir / "sites.json").write_text("[]", encoding="utf-8")
+        (self.dir / "folders.json").write_text("[]", encoding="utf-8")
+        self.service = ResourceService(self.dir)
+        self.service.load()
+        self.a = self.service.add("links", name="Alpha", target="https://a.example")
+        self.b = self.service.add("links", name="Beta", target="https://b.example")
+        self.c = self.service.add("links", name="Gamma", target="https://c.example")
+
+    def test_reorder_persists_the_new_order(self) -> None:
+        # add() inserts at the top, so the stored order is [Gamma, Beta, Alpha].
+        self.service.reorder("links", [self.a.id, self.b.id, self.c.id])
+        self.assertEqual(
+            [item.name for item in self.service.items("links")],
+            ["Alpha", "Beta", "Gamma"],
+        )
+        self.assertEqual(
+            [item.name for item in self.reload().items("links")],
+            ["Alpha", "Beta", "Gamma"],
+        )
+
+    def test_reorder_keeps_ids_categories_and_favourites(self) -> None:
+        self.service.set_favorite("links", self.b.id, True)
+        reordered = self.service.reorder(
+            "links", [self.a.id, self.b.id, self.c.id]
+        )
+        self.assertEqual([item.id for item in reordered], [self.a.id, self.b.id, self.c.id])
+        self.assertTrue(reordered[1].favorite)
+        self.assertEqual(reordered[1].category, self.b.category)
+
+    def test_reorder_rejects_missing_extra_or_duplicate_ids(self) -> None:
+        for payload in (
+            [self.a.id, self.b.id],
+            [self.a.id, self.b.id, self.c.id, "does-not-exist"],
+            [self.a.id, self.a.id, self.b.id],
+        ):
+            with self.subTest(payload=payload):
+                with self.assertRaises(ReorderError) as ctx:
+                    self.service.reorder("links", payload)
+                self.assertEqual(ctx.exception.key, "reorder_failed")
+        # The rejected payloads must not have changed the stored order.
+        self.assertEqual(
+            [item.name for item in self.service.items("links")],
+            ["Gamma", "Beta", "Alpha"],
+        )
+
+    def test_reorder_to_the_same_order_does_not_write(self) -> None:
+        with mock.patch.object(self.service, "_save") as save:
+            self.service.reorder("links", [self.c.id, self.b.id, self.a.id])
+        save.assert_not_called()
+
+    def test_reorder_does_not_pin_favourites(self) -> None:
+        self.service.set_favorite("links", self.c.id, True)
+        self.service.reorder("links", [self.a.id, self.b.id, self.c.id])
+        self.assertEqual(
+            [item.name for item in self.service.visible("links")],
+            ["Alpha", "Beta", "Gamma"],
+        )
+
+
+class OrderMigrationTests(unittest.TestCase):
+    """One-time migration of the pre-Phase-8 "favourites first" display order."""
+
+    @staticmethod
+    def _write_sites(path: Path, items: list[dict[str, object]]) -> None:
+        (path / "sites.json").write_text(json.dumps(items), encoding="utf-8")
+        (path / "folders.json").write_text("[]", encoding="utf-8")
+
+    @staticmethod
+    def _meta(path: Path) -> dict[str, object]:
+        return json.loads((path / ORDER_META_FILENAME).read_text(encoding="utf-8"))
+
+    def test_legacy_display_order_is_baked_in_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            self._write_sites(
+                path,
+                [
+                    {"id": "plain", "name": "Plain", "url": "https://plain.example"},
+                    {"id": "fav", "name": "Fav", "url": "https://fav.example", "favorite": True},
+                ],
+            )
+            service = ResourceService(path)
+            service.load()
+            self.assertEqual([item.id for item in service.items("links")], ["fav", "plain"])
+            self.assertEqual(self._meta(path)["orderVersion"], ORDER_VERSION)
+
+    def test_manual_order_survives_reload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            self._write_sites(
+                path,
+                [
+                    {"id": "plain", "name": "Plain", "url": "https://plain.example"},
+                    {"id": "fav", "name": "Fav", "url": "https://fav.example", "favorite": True},
+                ],
+            )
+            service = ResourceService(path)
+            service.load()
+            # After the one-time migration the user drags the favourite below.
+            service.reorder("links", ["plain", "fav"])
+            reloaded = ResourceService(path)
+            reloaded.load()
+            self.assertEqual([item.id for item in reloaded.items("links")], ["plain", "fav"])
+
+    def test_corrupt_marker_skips_migration_and_is_repaired(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            self._write_sites(
+                path,
+                [
+                    {"id": "plain", "name": "Plain", "url": "https://plain.example"},
+                    {"id": "fav", "name": "Fav", "url": "https://fav.example", "favorite": True},
+                ],
+            )
+            (path / ORDER_META_FILENAME).write_text("{not json", encoding="utf-8")
+            service = ResourceService(path)
+            service.load()
+            # Re-pinning favourites here would destroy a manual order, so the
+            # unreadable marker must mean "do nothing".
+            self.assertEqual([item.id for item in service.items("links")], ["plain", "fav"])
+            self.assertEqual(self._meta(path)["orderVersion"], ORDER_VERSION)
+
+    def test_first_run_writes_the_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            ResourceService(path).load()
+            self.assertTrue((path / ORDER_META_FILENAME).exists())
+            self.assertEqual(self._meta(path)["orderVersion"], ORDER_VERSION)
+
+    def test_corrupt_data_does_not_write_the_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            (path / "sites.json").write_text("[broken", encoding="utf-8")
+            (path / "folders.json").write_text("[]", encoding="utf-8")
+            with self.assertRaises(CorruptDataError):
+                ResourceService(path).load()
+            self.assertFalse((path / ORDER_META_FILENAME).exists())
 
 
 if __name__ == "__main__":
