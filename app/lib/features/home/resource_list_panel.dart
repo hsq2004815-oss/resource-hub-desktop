@@ -249,7 +249,7 @@ class ResourceListPanel extends StatelessWidget {
               AppCategoryDropdown(
                 value: categoryFilter,
                 items: filterEntries,
-                width: 190,
+                width: 150,
                 leadingIcon: Icons.filter_alt_outlined,
                 labelBuilder: (String value) => switch (value) {
                   kAllCategories => t.t('all_categories'),

@@ -341,18 +341,27 @@ abstract final class AppTheme {
   }
 
   static ButtonStyle _filledStyle(ColorScheme scheme) {
+    // Material 3 filled button: 40px tall, fully rounded (stadium), 20px side
+    // padding, 18px icon, 14px medium label. The previous 13px + 8px radius +
+    // compact density made the Chinese label look cramped and slightly blurry
+    // white-on-blue, especially at 125% Windows scaling.
     return ButtonStyle(
       minimumSize: const WidgetStatePropertyAll<Size>(
-        Size(0, AppSizes.controlHeight),
+        Size(64, AppSizes.controlHeight),
       ),
       padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
-        EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+        EdgeInsets.symmetric(horizontal: AppSpacing.xl),
       ),
-      shape: const WidgetStatePropertyAll<OutlinedBorder>(
-        RoundedRectangleBorder(borderRadius: AppRadius.smAll),
-      ),
+      iconSize: const WidgetStatePropertyAll<double>(18),
+      visualDensity: VisualDensity.standard,
+      shape: const WidgetStatePropertyAll<OutlinedBorder>(StadiumBorder()),
       textStyle: WidgetStatePropertyAll<TextStyle?>(
-        TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          height: 1.2,
+          letterSpacing: 0.1,
+        ),
       ),
     );
   }
