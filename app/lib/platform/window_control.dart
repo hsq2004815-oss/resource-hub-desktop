@@ -12,6 +12,18 @@ library;
 
 import 'package:flutter/services.dart';
 
+/// What the runner should do with the main window after leaving quick mode.
+enum QuickExitVisibility {
+  /// Put the window back into the state it had before the panel opened.
+  auto,
+
+  /// Always show the restored full window (hotkey asks for the full app).
+  show,
+
+  /// Always hide it (the panel was opened over the tray).
+  hide,
+}
+
 abstract final class WindowControl {
   static const MethodChannel _channel = MethodChannel('resource_hub/window');
 
@@ -53,7 +65,16 @@ abstract final class WindowControl {
       false;
 
   /// Restores the saved frame, size and visibility after [enterQuickMode].
-  static Future<void> exitQuickMode() => _invoke<void>('exitQuickMode');
+  ///
+  /// The runner hides the window before restoring the geometry when it is not
+  /// going to stay visible, so the HUD-sized window never briefly grows back on
+  /// screen with a stale frame.
+  static Future<void> exitQuickMode({
+    QuickExitVisibility visibility = QuickExitVisibility.auto,
+  }) =>
+      _invoke<void>('exitQuickMode', <String, String>{
+        'visibility': visibility.name,
+      });
 
   /// Destroys the window; the process exits and the backend sees stdin EOF.
   static Future<void> quit() => _invoke<void>('quit');

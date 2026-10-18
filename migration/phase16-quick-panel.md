@@ -111,10 +111,10 @@
 | 项 | 结果 |
 |---|---|
 | `flutter analyze` | 0 issue |
-| Flutter 测试 | **56 / 56**（+6：HUD 打开/Esc 还原、Enter 打开、懒加载+搜索、Tab 切树、单击打开、`quickDismissed`） |
+| Flutter 测试 | **59 / 59**（+6 HUD 行为，+3 关闭顺序回归：见 §7） |
 | 后端测试 | **172 / 172**（1 个 symlink skip；基线 167 +5） |
 | `verify_shell.py` | 9 / 9 PASS（关窗→托盘、全局热键、二次启动、拖放不受影响） |
-| `verify_quick_panel.py`（新增实机脚本） | **7 / 7 PASS** |
+| `verify_quick_panel.py`（新增实机脚本） | **7 / 7 PASS**（读取 `settings.json` 里的实际热键） |
 
 `verify_quick_panel.py` 的实测输出（120 DPI，逻辑 480×600 → 物理 600×750）：
 
@@ -134,7 +134,8 @@ PASS escape_returns_to_tray       visible=False
 - `phase16-quick-search.png`：输入 `Git` 后的扁平过滤结果（含 URL 副标题）；
 - `phase16-quick-folders-expanded.png`：文件夹树展开真实目录（懒加载）；
 - `phase16-quick-links-from-tray.png`：窗口在托盘时热键直接拉起 HUD；
-- `phase16-settings-hotkeys.png`：设置里三行快捷键（完整窗口 / 网站树 / 文件夹树）。
+- `phase16-settings-hotkeys.png`：设置里三行快捷键（完整窗口 / 网站树 / 文件夹树）；
+- `phase16-dismiss-fixed.png`：点击面板旁边收起后，完整窗口正常还原（§7 修复后的截图）。
 
 ---
 
@@ -159,3 +160,44 @@ cd ..\app; flutter analyze; flutter test
 # 实机（先启动 release 里的 resource_hub.exe）
 cd ..; D:\miniconda3\python.exe migration\tools\verify_quick_panel.py
 ```
+
+---
+
+## 7. 修复记录 — Phase 16.1：点击面板旁边出现黑色大窗口（用户反馈）
+
+**现象**：HUD 弹出后点击旁边（失焦自动收起）时，窗口会偶发变成整个正常大小、四周纯黑、
+中间还残留着树面板的截图状态。
+
+**根因**（两个顺序问题叠加）：
+
+1. runner 的 `ExitQuickMode()` 在窗口仍然可见时就把保存的完整尺寸/边框还原了 —— 窗口先放大，
+   而 Flutter 引擎的下一次绘制还没发生，于是露出了未绘制的黑色区域和上一帧 HUD 内容；
+   如果收集前完整窗口在托盘里，之后还会立刻 `SW_HIDE`，看起来就是"闪一下黑色大窗口"。
+2. Dart 侧先 `await exitQuickMode()` 再 `setState` 切回完整界面，所以窗口放大那一刻 UI 还是 HUD。
+
+**修复**：
+
+- runner `ExitQuickMode(int visibility)` 增加可见性参数（`auto` / `show` / `hide` 对应 0/1/2）：
+  - 需要隐藏时（`hide`，或 `auto` 且打开 HUD 前窗口不可见）**先 `SW_HIDE` 再恢复样式/尺寸**，
+    屏幕上不会出现放大后的 HUD 窗口；
+  - 恢复后调用 `flutter_controller_->ForceRedraw()`，尽快产出新帧。
+- Dart `_closeQuick()` 按场景重排：
+  - 托盘 → 托盘：`exitQuickMode(hide)` 先让面板消失，再 `setState` 重建完整界面（窗口保持隐藏）；
+  - HUD 内按完整窗口快捷键：`exitQuickMode(hide)` → `setState` → `WindowControl.show()`；
+  - 原窗口可见：先 `setState` + 等一帧（`endOfFrame`，120 ms 上限兜底），再 `exitQuickMode(auto)`
+    放大窗口，避免用旧帧放大；
+  - 进入 HUD 时不等待重绘，立即缩小，避免面板在大窗口里闪现。
+- `verify_quick_panel.py` 改为从 `resource_hub.exe` 同目录的 `settings.json` 读取**用户实际配置的**
+  三组热键（再按 VK 映射注入），而不是假设默认值；测试时先点击 HUD 搜索框让窗口取得前台，
+  这样合成的 Esc/方向键才能到达应用。
+
+**验证**：
+
+| 项 | 结果 |
+|---|---|
+| Flutter 测试 | **59 / 59**（新增 3 个：托盘关闭先 hide、可见窗口关闭先重绘再 auto、HUD 内展开先 hide 再 show） |
+| 实机 1 kHz 采样 | 托盘场景：点击旁边后 **< 5 ms 窗口即隐藏**，无任何"大窗口可见"帧；可见窗口场景：窗口恢复后 1–2 ms 内出现正确界面，无持续黑窗 |
+| `verify_quick_panel.py` | 7 / 7 PASS（使用用户配置的 `Ctrl+Shift+G` / `Ctrl+Shift+V`） |
+| 回归 | `verify_shell.py` 9 / 9 PASS；后端 172 / 172 |
+
+截图：`migration/screenshots/phase16-dismiss-fixed.png`（点击旁边收起后完整窗口正常还原）。

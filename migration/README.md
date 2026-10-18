@@ -1,4 +1,4 @@
-# Resource Hub 迁移文档索引
+﻿# Resource Hub 迁移文档索引
 
 把 `resource_hub.pyw`（Python Tkinter，单文件）迁移为 **Flutter 前端 + Python 后端**的完整记录。
 按顺序阅读：
@@ -36,7 +36,7 @@ Python 后端负责数据读写、全局热键、导入导出与路径操作，�
 # 后端 172 个测试
 cd backend; D:\miniconda3\python.exe -m unittest discover -s tests -t .
 
-# 前端 analyze + 56 个测试
+# 前端 analyze + 59 个测试
 cd ..\app; flutter analyze; flutter test
 
 # 实机壳层（关窗→托盘、热键、二次启动、拖拽)

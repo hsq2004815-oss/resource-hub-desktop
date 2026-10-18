@@ -232,35 +232,78 @@ class _HomePageState extends State<HomePage> {
       setState(() => _quickKind = kind);
       return;
     }
-    _quickReturnVisible = await WindowControl.isVisible();
+    final bool wasVisible = await WindowControl.isVisible();
     if (!mounted) {
       return;
     }
+    _quickReturnVisible = wasVisible;
     setState(() {
       _quickMode = true;
       _quickKind = kind;
     });
+    // Shrink immediately: waiting for a frame here showed the panel at full
+    // window size for a moment. The window is hidden or topmost while it
+    // shrinks, and the panel is cheap to lay out, so a stale frame is not
+    // visible in practice.
     await WindowControl.enterQuickMode(width: 480, height: 600);
   }
+
+  /// Completes after one frame, but never waits longer than a repaint budget: a
+  /// paused engine must not freeze the quick panel.
+  Future<void> _awaitQuickFrame() => Future.any<void>(<Future<void>>[
+        WidgetsBinding.instance.endOfFrame,
+        Future<void>.delayed(const Duration(milliseconds: 120)),
+      ]);
 
   Future<void> _closeQuick({bool showFullWindow = false}) async {
     if (!_quickMode) {
       return;
     }
     final bool wasVisible = _quickReturnVisible;
-    // The runner restores the saved frame, size and visibility; when the panel
-    // was opened over a hidden window Esc goes back to the tray.
-    await WindowControl.exitQuickMode();
-    if (showFullWindow && !wasVisible) {
+    if (!wasVisible && showFullWindow) {
+      // Toggle-to-full from a panel that was opened over the tray: make the
+      // panel disappear immediately, rebuild the full UI while the window is
+      // hidden (the runner also restores the saved geometry hidden), then show
+      // the normal window. Restoring the geometry first flashed the stale HUD
+      // frame over black margins (Phase 16.1 regression).
+      await WindowControl.exitQuickMode(
+        visibility: QuickExitVisibility.hide,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _quickMode = false);
       await WindowControl.show();
+      if (mounted) {
+        _searchFocus.requestFocus();
+      }
+      return;
     }
+    if (!wasVisible && !showFullWindow) {
+      // Opened over the tray and closing back to the tray: the runner hides the
+      // window before restoring the saved geometry, so it never grows back on
+      // screen for a frame. The full UI is rebuilt while the window is hidden.
+      await WindowControl.exitQuickMode(
+        visibility: QuickExitVisibility.hide,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() => _quickMode = false);
+      return;
+    }
+    // The full window stays on screen. Repaint the full UI while the panel is
+    // still visible, then let the runner restore the geometry — growing first
+    // left a stale HUD frame over black margins.
+    setState(() => _quickMode = false);
+    await _awaitQuickFrame();
     if (!mounted) {
       return;
     }
-    setState(() => _quickMode = false);
-    if (showFullWindow || wasVisible) {
-      _searchFocus.requestFocus();
-    }
+    await WindowControl.exitQuickMode(
+      visibility: QuickExitVisibility.auto,
+    );
+    _searchFocus.requestFocus();
   }
 
   void _switchQuickKind() {

@@ -47,7 +47,12 @@ class FlutterWindow : public Win32Window {
   // logical size, so the same UI can render a Spotlight-style tree HUD. Restoring
   // puts the saved frame, rect and topmost state back.
   bool EnterQuickMode(int logical_width, int logical_height);
-  void ExitQuickMode();
+
+  // Leaves quick mode and restores the saved frame/rect. `visibility` picks what
+  // happens to the window: 0 = return to the pre-quick state, 1 = always show,
+  // 2 = always hide (the window is hidden before the geometry is restored so the
+  // HUD-sized window never grows back on screen for a frame).
+  void ExitQuickMode(int visibility = 0);
 
   // Tells Dart that the quick panel should close (focus was lost, tray click,
   // second instance, Alt+F4). Dart calls exitQuickMode() and restores its UI.

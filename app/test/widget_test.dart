@@ -1,4 +1,4 @@
-// Shell tests driven by an in-memory fake, so they never spawn Python.
+﻿// Shell tests driven by an in-memory fake, so they never spawn Python.
 //
 // The real backend path is covered by `backend_client_test.dart`; these tests are
 // about layout, i18n, filtering and theme — they must stay fast and offline.
@@ -456,6 +456,7 @@ Future<void> pumpApp(
   Size size = const Size(1600, 1100),
   FakeApi? api,
   Future<void> Function(AppSettings settings)? onSettingsChanged,
+  Future<Object?> Function(MethodCall call)? shellHandler,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
@@ -470,6 +471,9 @@ Future<void> pumpApp(
   final TestDefaultBinaryMessenger messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   messenger.setMockMethodCallHandler(shellChannel, (MethodCall call) async {
+    if (shellHandler != null) {
+      return shellHandler(call);
+    }
     throw MissingPluginException('${call.method} is not available in tests');
   });
   addTearDown(() => messenger.setMockMethodCallHandler(shellChannel, null));
@@ -1284,6 +1288,107 @@ void main() {
 
     await _emitQuickDismiss();
     await tester.pumpAndSettle();
+    expect(find.byTooltip('新增资源'), findsOneWidget);
+  });
+
+  testWidgets('opened-from-tray dismiss hides the window before restoring it',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    final List<MethodCall> calls = <MethodCall>[];
+    await pumpApp(
+      tester,
+      api: api,
+      shellHandler: (MethodCall call) async {
+        calls.add(call);
+        if (call.method == 'isVisible') {
+          return false; // the window was in the tray when the hotkey fired
+        }
+        return null;
+      },
+    );
+    api.emitHotkey('quickLinks');
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('新增资源'), findsNothing);
+
+    await _emitQuickDismiss();
+    await tester.pumpAndSettle();
+
+    final MethodCall exit = calls.lastWhere(
+      (MethodCall call) => call.method == 'exitQuickMode',
+    );
+    expect(
+      (exit.arguments as Map<Object?, Object?>)['visibility'],
+      'hide',
+      reason: 'a tray-opened panel must hide before geometry is restored',
+    );
+    expect(find.byTooltip('新增资源'), findsOneWidget);
+  });
+
+  testWidgets('visible-window dismiss repaints before restoring geometry',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    final List<MethodCall> calls = <MethodCall>[];
+    await pumpApp(
+      tester,
+      api: api,
+      shellHandler: (MethodCall call) async {
+        calls.add(call);
+        if (call.method == 'isVisible') {
+          return true; // the full window was visible when the panel opened
+        }
+        return null;
+      },
+    );
+    api.emitHotkey('quickFolders');
+    await tester.pumpAndSettle();
+    expect(find.text('项目主目录'), findsOneWidget);
+
+    await _emitQuickDismiss();
+    await tester.pumpAndSettle();
+
+    final MethodCall exit = calls.lastWhere(
+      (MethodCall call) => call.method == 'exitQuickMode',
+    );
+    expect(
+      (exit.arguments as Map<Object?, Object?>)['visibility'],
+      'auto',
+      reason: 'a visible window is restored after the full UI has repainted',
+    );
+    expect(find.byTooltip('新增资源'), findsOneWidget);
+  });
+
+  testWidgets('toggle-to-full from a tray-opened panel hides then shows',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    final List<MethodCall> calls = <MethodCall>[];
+    await pumpApp(
+      tester,
+      api: api,
+      shellHandler: (MethodCall call) async {
+        calls.add(call);
+        if (call.method == 'isVisible') {
+          return false;
+        }
+        return null;
+      },
+    );
+    api.emitHotkey('quickLinks');
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('新增资源'), findsNothing);
+
+    api.emitHotkey('toggle');
+    await tester.pumpAndSettle();
+
+    final List<String> methods =
+        calls.map((MethodCall call) => call.method).toList();
+    final int exitIndex = methods.lastIndexOf('exitQuickMode');
+    final MethodCall exit = calls[exitIndex];
+    expect((exit.arguments as Map<Object?, Object?>)['visibility'], 'hide');
+    expect(
+      methods.indexOf('show', exitIndex),
+      greaterThan(exitIndex),
+      reason: 'the full window is shown after the panel is gone',
+    );
     expect(find.byTooltip('新增资源'), findsOneWidget);
   });
 

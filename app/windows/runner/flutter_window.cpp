@@ -216,7 +216,18 @@ void FlutterWindow::RegisterChannels() {
           return;
         }
         if (method == "exitQuickMode") {
-          ExitQuickMode();
+          int visibility = 0;
+          if (const auto* args =
+                  std::get_if<flutter::EncodableMap>(call.arguments())) {
+            const std::wstring value =
+                MapString(*args, "visibility", L"auto");
+            if (value == L"show") {
+              visibility = 1;
+            } else if (value == L"hide") {
+              visibility = 2;
+            }
+          }
+          ExitQuickMode(visibility);
           result->Success(flutter::EncodableValue(true));
           return;
         }
@@ -471,13 +482,22 @@ bool FlutterWindow::EnterQuickMode(int logical_width, int logical_height) {
   return true;
 }
 
-void FlutterWindow::ExitQuickMode() {
+void FlutterWindow::ExitQuickMode(int visibility) {
   HWND handle = GetHandle();
   if (handle == nullptr || !quick_mode_) {
     return;
   }
+  const bool was_visible = quick_was_visible_;
+  const bool show_window =
+      visibility == 1 || (visibility == 0 && was_visible);
   quick_mode_ = false;
   quick_dismiss_posted_ = false;
+  // Hide before restoring the frame when the window is going away: otherwise the
+  // HUD-sized window briefly grows back on screen while Flutter still displays
+  // the previous frame, leaving black margins around a stale tree (Phase 16 QA).
+  if (!show_window) {
+    ::ShowWindow(handle, SW_HIDE);
+  }
   ::SetWindowLongPtrW(handle, GWL_STYLE, quick_saved_style_);
   ::SetWindowLongPtrW(handle, GWL_EXSTYLE, quick_saved_ex_style_);
   const int corner = kDwmCornerDefault;
@@ -488,13 +508,23 @@ void FlutterWindow::ExitQuickMode() {
                  quick_saved_rect_.right - quick_saved_rect_.left,
                  quick_saved_rect_.bottom - quick_saved_rect_.top,
                  SWP_FRAMECHANGED | SWP_NOACTIVATE);
-  if (quick_was_visible_) {
-    // Do not steal the foreground: the user likely clicked another window and
-    // that is exactly why the HUD is closing.
+  if (show_window) {
+    // Do not steal the foreground on the automatic path: the user likely
+    // clicked another window and that is exactly why the HUD is closing.
     ::ShowWindow(handle, SW_RESTORE);
     ::ShowWindow(handle, SW_SHOW);
-  } else {
-    ::ShowWindow(handle, SW_HIDE);
+    if (visibility == 1) {
+      ::AllowSetForegroundWindow(ASFW_ANY);
+      ::SetForegroundWindow(handle);
+      if (HWND child = ::GetWindow(handle, GW_CHILD)) {
+        ::SetFocus(child);
+      }
+    }
+  }
+  // Ask the engine for a fresh frame right after the resize instead of waiting
+  // for the next incidental invalidation.
+  if (flutter_controller_) {
+    flutter_controller_->ForceRedraw();
   }
 }
 
