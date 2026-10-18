@@ -13,6 +13,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -64,15 +65,40 @@ class ResourceGrid extends StatefulWidget {
 class _ResourceGridState extends State<ResourceGrid> {
   final ScrollController _scroll = ScrollController();
   final Map<String, GlobalKey> _cardKeys = <String, GlobalKey>{};
+  final GlobalKey _gridKey = GlobalKey(debugLabel: 'resource-grid');
 
-  int? _draggingIndex;
-  int? _dropSlot;
+  /// Local copy in on-screen order. Reordering mutates this on every drag
+  /// update so the cards below animate to their new slots while the pointer
+  /// still moves (the list view gets the same feel from ReorderableListView).
+  List<ResourceItem> _displayItems = <ResourceItem>[];
+
+  String? _draggingId;
   Offset? _lastPointer;
   Timer? _autoScroll;
   double _autoScrollStep = 0;
   RenderBox? _viewportBox;
+  int _columns = 1;
+  double _cardWidth = 0;
 
   static const double _edgeZone = 44;
+  static const double _maxCardExtent = 360;
+  static const double _rowHeight = 132;
+  static const double _cardSpacing = AppSpacing.sm;
+  static const Duration _shiftDuration = Duration(milliseconds: 180);
+
+  @override
+  void initState() {
+    super.initState();
+    _displayItems = List<ResourceItem>.of(widget.items);
+  }
+
+  @override
+  void didUpdateWidget(ResourceGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_draggingId == null) {
+      _displayItems = List<ResourceItem>.of(widget.items);
+    }
+  }
 
   @override
   void dispose() {
@@ -85,90 +111,78 @@ class _ResourceGridState extends State<ResourceGrid> {
       _cardKeys.putIfAbsent(item.id, GlobalKey.new);
 
   // -- drag lifecycle ------------------------------------------------------
-  void _handleDragStarted(int index) {
+  void _handleDragStarted(ResourceItem item) {
     setState(() {
-      _draggingIndex = index;
-      _dropSlot = index;
+      _draggingId = item.id;
+      _lastPointer = null;
     });
   }
 
   void _handleDragUpdate(Offset globalPosition) {
     _lastPointer = globalPosition;
-    _updateDropSlot(globalPosition);
+    _updateDropPosition(globalPosition);
     _updateAutoScroll(globalPosition);
   }
 
   void _handleDragEnd() {
     _stopAutoScroll();
-    final int? from = _draggingIndex;
-    final int? slot = _dropSlot;
+    final String? draggedId = _draggingId;
+    final int finalIndex = draggedId == null
+        ? -1
+        : _displayItems.indexWhere((ResourceItem item) => item.id == draggedId);
+    final int originalIndex = draggedId == null
+        ? -1
+        : widget.items.indexWhere((ResourceItem item) => item.id == draggedId);
     setState(() {
-      _draggingIndex = null;
-      _dropSlot = null;
+      _draggingId = null;
       _lastPointer = null;
     });
-    if (from == null || slot == null) {
+    if (finalIndex < 0 || originalIndex < 0 || finalIndex == originalIndex) {
+      // Keep the local copy in sync even when nothing moved.
+      _displayItems = List<ResourceItem>.of(widget.items);
       return;
     }
-    final int target = slot > from ? slot - 1 : slot;
-    if (target == from) {
-      return;
-    }
-    widget.onMoveItem(widget.items[from], target);
+    // `onMoveItem` wants the index *after* the dragged item was removed, which
+    // is exactly its final position in the locally reordered list.
+    widget.onMoveItem(_displayItems[finalIndex], finalIndex);
   }
 
-  /// Finds the insertion slot (0..items.length) for [global].
+  /// Moves the dragged card in the local list to the slot under the pointer.
   ///
-  /// The pointer over a card decides before/after by its x position relative to
-  /// the card centre; gaps and empty space fall back to the nearest card so the
-  /// indicator always has a sensible place to land.
-  void _updateDropSlot(Offset global) {
-    final RenderBox? viewport = _viewportBox;
-    if (viewport == null) {
+  /// The grid geometry is computed from the pointer position instead of hit
+  /// testing every card: that stays correct while cards animate and while the
+  /// list scrolls under the pointer.
+  void _updateDropPosition(Offset global) {
+    final String? draggedId = _draggingId;
+    final RenderBox? grid = _gridKey.currentContext?.findRenderObject() as RenderBox?;
+    if (draggedId == null || grid == null || !grid.hasSize) {
       return;
     }
-    final Rect viewportRect =
-        viewport.localToGlobal(Offset.zero) & viewport.size;
-    if (!viewportRect.inflate(48).contains(global)) {
-      if (_dropSlot != null) {
-        setState(() => _dropSlot = null);
-      }
+    final int from = _displayItems.indexWhere((ResourceItem item) => item.id == draggedId);
+    final int count = _displayItems.length;
+    if (from < 0 || count == 0) {
       return;
     }
-
-    int? slot;
-    double bestDistance = double.infinity;
-    for (int index = 0; index < widget.items.length; index++) {
-      final BuildContext? cardContext =
-          _cardKeys[widget.items[index].id]?.currentContext;
-      final RenderBox? box =
-          cardContext?.findRenderObject() as RenderBox?;
-      if (box == null || !box.hasSize) {
-        continue;
-      }
-      final Rect rect = box.localToGlobal(Offset.zero) & box.size;
-      final Offset center = rect.center;
-      if (rect.contains(global)) {
-        slot = global.dx >= center.dx ? index + 1 : index;
-        break;
-      }
-      final double distance = (center - global).distance;
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        final bool after;
-        if (global.dy > rect.bottom) {
-          after = true;
-        } else if (global.dy < rect.top) {
-          after = false;
-        } else {
-          after = global.dx >= center.dx;
-        }
-        slot = after ? index + 1 : index;
-      }
+    final Offset local = grid.globalToLocal(global);
+    final double cellWidth = _cardWidth + _cardSpacing;
+    final double cellHeight = _rowHeight + _cardSpacing;
+    final int rows = math.max(1, (count / _columns).ceil());
+    final int col = (local.dx / cellWidth).floor().clamp(0, _columns - 1);
+    final int row = (local.dy / cellHeight).floor().clamp(0, rows - 1);
+    int slot = row * _columns + col;
+    if (local.dx - col * cellWidth > _cardWidth / 2) {
+      slot += 1;
     }
-    if (slot != null && slot != _dropSlot) {
-      setState(() => _dropSlot = slot);
+    slot = slot.clamp(0, count);
+    int to = slot > from ? slot - 1 : slot;
+    to = to.clamp(0, count - 1);
+    if (to == from) {
+      return;
     }
+    setState(() {
+      final ResourceItem moved = _displayItems.removeAt(from);
+      _displayItems.insert(to, moved);
+    });
   }
 
   void _updateAutoScroll(Offset global) {
@@ -180,9 +194,9 @@ class _ResourceGridState extends State<ResourceGrid> {
     final double dy = global.dy - rect.top;
     double delta = 0;
     if (dy < _edgeZone) {
-      delta = -14 * (1 - dy / _edgeZone);
+      delta = -18 * (1 - dy / _edgeZone);
     } else if (dy > rect.height - _edgeZone) {
-      delta = 14 * (1 - (rect.height - dy) / _edgeZone);
+      delta = 18 * (1 - (rect.height - dy) / _edgeZone);
     }
     if (delta.abs() < 0.5) {
       _stopAutoScroll();
@@ -212,7 +226,7 @@ class _ResourceGridState extends State<ResourceGrid> {
     position.jumpTo(next);
     final Offset? pointer = _lastPointer;
     if (pointer != null) {
-      _updateDropSlot(pointer);
+      _updateDropPosition(pointer);
     }
   }
 
@@ -223,6 +237,41 @@ class _ResourceGridState extends State<ResourceGrid> {
   }
 
   // -- build ---------------------------------------------------------------
+  Widget _buildCard(ResourceItem item) {
+    final bool dragged = item.id == _draggingId;
+    final Widget card = _ResourceCard(
+      key: _keyFor(item),
+      item: item,
+      mode: widget.mode,
+      selected: item.id == widget.selectedId,
+      actions: widget.actions,
+      reorderEnabled: widget.reorderEnabled,
+      onSelected: () => widget.onSelected(item),
+      onPreview: widget.onPreview,
+      onDragStarted: () => _handleDragStarted(item),
+      onDragUpdate: _handleDragUpdate,
+      onDragEnd: _handleDragEnd,
+    );
+    if (!dragged) {
+      return card;
+    }
+    // The drag session belongs to the Draggable inside this card, so the card
+    // must stay mounted: keep it invisible above the drop-slot placeholder
+    // instead of removing it from the tree.
+    return IgnorePointer(
+      child: Stack(
+        children: <Widget>[
+          const Positioned.fill(
+            child: _DragPlaceholder(
+              key: ValueKey<String>('grid-drop-placeholder'),
+            ),
+          ),
+          Positioned.fill(child: Opacity(opacity: 0, child: card)),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.items.isEmpty) {
@@ -233,38 +282,45 @@ class _ResourceGridState extends State<ResourceGrid> {
       child: LayoutBuilder(
         builder: (BuildContext viewportContext, BoxConstraints constraints) {
           _viewportBox = viewportContext.findRenderObject() as RenderBox?;
-          return GridView.builder(
+          final double width = constraints.maxWidth;
+          _columns = math.max(
+            1,
+            (width / (_maxCardExtent + _cardSpacing)).ceil(),
+          );
+          _cardWidth = (width + _cardSpacing) / _columns - _cardSpacing;
+          final int rows = math.max(1, (_displayItems.length / _columns).ceil());
+          final double height =
+              rows * _rowHeight + (rows - 1) * _cardSpacing;
+          return SingleChildScrollView(
             controller: _scroll,
             primary: false,
-            padding: EdgeInsets.zero,
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 360,
-              mainAxisExtent: 132,
-              crossAxisSpacing: AppSpacing.sm,
-              mainAxisSpacing: AppSpacing.sm,
+            child: SizedBox(
+              key: _gridKey,
+              width: width,
+              height: height,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  for (int index = 0; index < _displayItems.length; index++)
+                    AnimatedPositioned(
+                      key: ValueKey<String>(
+                        'grid-card-${_displayItems[index].id}',
+                      ),
+                      duration: _draggingId == null
+                          ? Duration.zero
+                          : _shiftDuration,
+                      curve: Curves.easeOutCubic,
+                      left:
+                          (index % _columns) * (_cardWidth + _cardSpacing),
+                      top:
+                          (index ~/ _columns) * (_rowHeight + _cardSpacing),
+                      width: _cardWidth,
+                      height: _rowHeight,
+                      child: _buildCard(_displayItems[index]),
+                    ),
+                ],
+              ),
             ),
-            itemCount: widget.items.length,
-            itemBuilder: (BuildContext context, int index) {
-              final ResourceItem item = widget.items[index];
-              return _ResourceCard(
-                key: _keyFor(item),
-                index: index,
-                item: item,
-                mode: widget.mode,
-                selected: item.id == widget.selectedId,
-                actions: widget.actions,
-                reorderEnabled: widget.reorderEnabled,
-                dragging: _draggingIndex == index,
-                showLeftLine: _dropSlot == index,
-                showRightLine: _dropSlot == widget.items.length &&
-                    index == widget.items.length - 1,
-                onSelected: () => widget.onSelected(item),
-                onPreview: widget.onPreview,
-                onDragStarted: () => _handleDragStarted(index),
-                onDragUpdate: _handleDragUpdate,
-                onDragEnd: _handleDragEnd,
-              );
-            },
           );
         },
       ),
@@ -275,15 +331,11 @@ class _ResourceGridState extends State<ResourceGrid> {
 class _ResourceCard extends StatefulWidget {
   const _ResourceCard({
     super.key,
-    required this.index,
     required this.item,
     required this.mode,
     required this.selected,
     required this.actions,
     required this.reorderEnabled,
-    required this.dragging,
-    required this.showLeftLine,
-    required this.showRightLine,
     required this.onSelected,
     this.onPreview,
     required this.onDragStarted,
@@ -291,15 +343,11 @@ class _ResourceCard extends StatefulWidget {
     required this.onDragEnd,
   });
 
-  final int index;
   final ResourceItem item;
   final ViewMode mode;
   final bool selected;
   final ResourceTableActions actions;
   final bool reorderEnabled;
-  final bool dragging;
-  final bool showLeftLine;
-  final bool showRightLine;
   final VoidCallback onSelected;
   final ValueChanged<ResourceItem>? onPreview;
   final VoidCallback onDragStarted;
@@ -330,17 +378,9 @@ class _ResourceCardState extends State<_ResourceCard> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (BuildContext layoutContext, BoxConstraints constraints) {
-        final Widget card = Opacity(
-          opacity: widget.dragging ? 0.45 : 1,
-          child: _buildCard(context, grip: _buildGrip(layoutContext, constraints)),
-        );
-        return Stack(
-          clipBehavior: Clip.none,
-          children: <Widget>[
-            Positioned.fill(child: card),
-            if (widget.showLeftLine) const _DropLine(left: -4),
-            if (widget.showRightLine) const _DropLine(right: -4),
-          ],
+        return _buildCard(
+          context,
+          grip: _buildGrip(layoutContext, constraints),
         );
       },
     );
@@ -349,15 +389,18 @@ class _ResourceCardState extends State<_ResourceCard> {
   /// Drag source. The handle is the only grab area; the feedback is a full-size
   /// ghost of the card, anchored so it keeps the pointer's original offset.
   Widget _buildGrip(BuildContext layoutContext, BoxConstraints constraints) {
-    final Widget grip = ReorderGrip(
-      visible: _hovered || widget.dragging,
-      enabled: widget.reorderEnabled,
+    final Widget grip = MouseRegion(
+      cursor: SystemMouseCursors.grab,
+      child: ReorderGrip(
+        visible: _hovered,
+        enabled: widget.reorderEnabled,
+      ),
     );
     if (!widget.reorderEnabled) {
       return grip;
     }
-    return Draggable<int>(
-      data: widget.index,
+    return Draggable<Object>(
+      data: widget.item.id,
       dragAnchorStrategy: (
         Draggable<Object> draggable,
         BuildContext context,
@@ -367,10 +410,13 @@ class _ResourceCardState extends State<_ResourceCard> {
             layoutContext.findRenderObject() as RenderBox?;
         return box == null ? Offset.zero : box.globalToLocal(position);
       },
-      feedback: SizedBox(
-        width: constraints.maxWidth,
-        height: constraints.maxHeight,
-        child: _CardGhost(item: widget.item),
+      feedback: MouseRegion(
+        cursor: SystemMouseCursors.grabbing,
+        child: SizedBox(
+          width: constraints.maxWidth,
+          height: constraints.maxHeight,
+          child: _CardGhost(item: widget.item),
+        ),
       ),
       onDragStarted: widget.onDragStarted,
       onDragUpdate: (DragUpdateDetails details) =>
@@ -616,26 +662,27 @@ class _CardGhost extends StatelessWidget {
   }
 }
 
-/// 2px primary insertion marker drawn in the gap next to a card.
-class _DropLine extends StatelessWidget {
-  const _DropLine({this.left, this.right});
-
-  final double? left;
-  final double? right;
+/// Soft placeholder left in the grid slot while the card is being dragged.
+class _DragPlaceholder extends StatelessWidget {
+  const _DragPlaceholder({super.key});
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Positioned(
-      left: left,
-      right: right,
-      top: AppSpacing.sm,
-      bottom: AppSpacing.sm,
-      child: Container(
-        width: 2,
-        decoration: BoxDecoration(
-          color: scheme.primary,
-          borderRadius: BorderRadius.circular(1),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.05),
+        borderRadius: AppRadius.mdAll,
+        border: Border.all(
+          color: scheme.primary.withValues(alpha: 0.35),
+          width: 1.5,
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.drag_indicator,
+          size: 18,
+          color: scheme.primary.withValues(alpha: 0.45),
         ),
       ),
     );

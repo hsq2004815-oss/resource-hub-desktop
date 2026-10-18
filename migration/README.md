@@ -26,6 +26,7 @@
 | [`phase18-bookmark-extension.md`](phase18-bookmark-extension.md) | 双向书签同步：浏览器扩展 + 本机回环桥，工具删除→浏览器取消收藏，浏览器删除/改名→工具同步 |
 | [`phase19-context-menu.md`](phase19-context-menu.md) | 资源管理器右键菜单：右键文件夹添加到资源库并弹窗选中；设置里可开关（Win11 在「显示更多选项」） |
 | [`phase20-rename.md`](phase20-rename.md) | 产品改名「常用资源工具」→「抽屉 Drawer」：仅显示名（标题/托盘/菜单文案/扩展名/快捷方式），exe 与数据路径不变 |
+| [`phase21-grid-reorder.md`](phase21-grid-reorder.md) | 网格拖动排序重做：拖动中卡片实时让位 + 180ms 动画 + 虚线占位，松手才保存（对齐列表视图手感） |
 | [`adr/ADR-001-tray-hotkey-ownership.md`](adr/ADR-001-tray-hotkey-ownership.md) | 托盘/热键归属、导入导出入口、数据覆盖风险 |
 | [`adr/ADR-002-native-shell-ownership.md`](adr/ADR-002-native-shell-ownership.md) | Windows 壳层归属（runner vs 后端） |
 
@@ -40,7 +41,7 @@ Python 后端负责数据读写、全局热键、导入导出与路径操作，�
 # 后端 271 个测试
 cd backend; D:\miniconda3\python.exe -m unittest discover -s tests -t .
 
-# 前端 analyze + 69 个测试
+# 前端 analyze + 70 个测试
 cd ..\app; flutter analyze; flutter test
 
 # 实机壳层（关窗→托盘、热键、二次启动、拖拽)

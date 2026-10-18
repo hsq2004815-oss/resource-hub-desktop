@@ -1068,6 +1068,41 @@ void main() {
     await tester.pump(const Duration(seconds: 6));
   });
 
+  testWidgets('dragging a grid card previews the new slot live', (
+    WidgetTester tester,
+  ) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    await tester.tap(find.byIcon(Icons.grid_view_outlined));
+    await tester.pumpAndSettle();
+
+    final Finder grip = find.byIcon(Icons.drag_indicator).first;
+    final TestGesture gesture = await tester.startGesture(
+      tester.getCenter(grip),
+    );
+    await tester.pump(const Duration(milliseconds: 40));
+    await gesture.moveBy(const Offset(200, 0));
+    await tester.pump(const Duration(milliseconds: 60));
+    await gesture.moveBy(const Offset(280, 0));
+    await tester.pump(const Duration(milliseconds: 60));
+
+    // While the pointer is still down the grid already shows the drop slot and
+    // has not persisted anything yet (the cards keep animating to their new
+    // positions, like the list view's ReorderableListView gap).
+    expect(
+      find.byKey(const ValueKey<String>('grid-drop-placeholder')),
+      findsOneWidget,
+    );
+    expect(api.reorderCalls, 0);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(api.reorderCalls, 1);
+    expect(folderIds(api), <String>['f2', 'f1', 'f3']);
+    await tester.pump(const Duration(seconds: 6));
+  });
+
   testWidgets('sort by date added reorders the collection',
       (WidgetTester tester) async {
     final FakeApi api = FakeApi(
