@@ -120,7 +120,7 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
     'shell_folder_exists': '“{0}”已在资源库中',
     'settings_shell_menu': '资源管理器右键菜单',
     'settings_shell_menu_hint':
-        '在文件夹上右键（Windows 11 在「显示更多选项」里）即可添加到本工具；关闭后自动移除该菜单项。',
+        '在文件夹图标上，或文件夹内空白处右键（Windows 11 在「显示更多选项」里）即可添加到本工具；关闭后自动移除菜单项。',
   },
   'en': <String, String>{
     'settings_theme': 'Appearance',
@@ -239,7 +239,7 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
     'shell_folder_exists': '"{0}" is already in the library',
     'settings_shell_menu': 'Explorer context menu',
     'settings_shell_menu_hint':
-        'Right-click a folder (Windows 11: under "Show more options") to add it here. Turning this off removes the menu entry.',
+        'Right-click a folder icon, or the empty area inside a folder (Windows 11: under "Show more options"), to add it here. Turning this off removes the menu entries.',
   },
 };
 

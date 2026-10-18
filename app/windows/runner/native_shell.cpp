@@ -85,9 +85,16 @@ std::wstring ExecutablePath() {
   }
 }
 
-// Phase 19: HKCU Explorer folder context-menu entry.
+// Phase 19: HKCU Explorer folder context-menu entries.
+//
+// Two variants share the executable and the switch:
+//  - Directory\shell        -> right-clicking a folder icon, argument "%1"
+//  - Directory\Background   -> right-clicking the empty area inside a folder,
+//                              argument "%V" (the folder currently open)
 constexpr wchar_t kShellMenuKey[] =
     L"Software\\Classes\\Directory\\shell\\ResourceHubAddFolder";
+constexpr wchar_t kShellMenuBackgroundKey[] =
+    L"Software\\Classes\\Directory\\Background\\shell\\ResourceHubAddFolder";
 
 bool SetRegistryString(HKEY key, const wchar_t* name, const std::wstring& value) {
   const DWORD bytes = static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t));
@@ -96,20 +103,19 @@ bool SetRegistryString(HKEY key, const wchar_t* name, const std::wstring& value)
                           bytes) == ERROR_SUCCESS;
 }
 
-bool CreateShellContextMenu() {
+// |label| is UTF-16 (escaped at the call sites); |placeholder| is %1 or %V.
+bool CreateMenuEntry(const wchar_t* key_path,
+                     const std::wstring& label,
+                     const wchar_t* placeholder) {
   const std::wstring executable = ExecutablePath();
   if (executable.empty()) {
     return false;
   }
   HKEY key = nullptr;
-  if (::RegCreateKeyExW(HKEY_CURRENT_USER, kShellMenuKey, 0, nullptr, 0,
-                        KEY_WRITE, nullptr, &key,
-                        nullptr) != ERROR_SUCCESS) {
+  if (::RegCreateKeyExW(HKEY_CURRENT_USER, key_path, 0, nullptr, 0, KEY_WRITE,
+                        nullptr, &key, nullptr) != ERROR_SUCCESS) {
     return false;
   }
-  // "添加到常用资源工具" written as escapes so the runner stays ASCII-only.
-  const std::wstring label =
-      L"\u6DFB\u52A0\u5230\u5E38\u7528\u8D44\u6E90\u5DE5\u5177";
   const std::wstring icon = L"\"" + executable + L"\",0";
   const bool values_ok = SetRegistryString(key, nullptr, label) &&
                          SetRegistryString(key, L"Icon", icon) &&
@@ -119,7 +125,7 @@ bool CreateShellContextMenu() {
     return false;
   }
   const std::wstring command_key_path =
-      std::wstring(kShellMenuKey) + L"\\command";
+      std::wstring(key_path) + L"\\command";
   HKEY command_key = nullptr;
   if (::RegCreateKeyExW(HKEY_CURRENT_USER, command_key_path.c_str(), 0, nullptr,
                         0, KEY_WRITE, nullptr, &command_key,
@@ -127,10 +133,24 @@ bool CreateShellContextMenu() {
     return false;
   }
   const std::wstring command =
-      L"\"" + executable + L"\" --add-folder \"%1\"";
+      L"\"" + executable + L"\" --add-folder \"" + placeholder + L"\"";
   const bool command_ok = SetRegistryString(command_key, nullptr, command);
   ::RegCloseKey(command_key);
   return command_ok;
+}
+
+bool CreateShellContextMenu() {
+  // "添加到常用资源工具" / "添加当前文件夹到常用资源工具", written as
+  // escapes so the runner source stays ASCII-only.
+  const std::wstring folder_label =
+      L"\u6DFB\u52A0\u5230\u5E38\u7528\u8D44\u6E90\u5DE5\u5177";
+  const std::wstring background_label = L"\u6DFB\u52A0\u5F53\u524D\u6587\u4EF6"
+                                        L"\u5939\u5230\u5E38\u7528\u8D44\u6E90"
+                                        L"\u5DE5\u5177";
+  const bool folder_ok = CreateMenuEntry(kShellMenuKey, folder_label, L"%1");
+  const bool background_ok =
+      CreateMenuEntry(kShellMenuBackgroundKey, background_label, L"%V");
+  return folder_ok && background_ok;
 }
 
 }  // namespace
@@ -262,8 +282,13 @@ bool SetShellContextMenuEnabled(bool enabled) {
   if (enabled) {
     return CreateShellContextMenu();
   }
-  const LONG result = ::RegDeleteTreeW(HKEY_CURRENT_USER, kShellMenuKey);
-  return result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND;
+  bool removed = true;
+  for (const wchar_t* key : {kShellMenuKey, kShellMenuBackgroundKey}) {
+    const LONG result = ::RegDeleteTreeW(HKEY_CURRENT_USER, key);
+    removed = removed &&
+              (result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND);
+  }
+  return removed;
 }
 
 bool GetShellContextMenuEnabled() {

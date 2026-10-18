@@ -23,7 +23,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 STABLE = REPO_ROOT / "release" / "ResourceHub-Desktop-20261017-1835"
 EXE = STABLE / "resource_hub.exe"
 MENU_KEY = r"Software\Classes\Directory\shell\ResourceHubAddFolder"
+MENU_BACKGROUND_KEY = (
+    r"Software\Classes\Directory\Background\shell\ResourceHubAddFolder"
+)
 MENU_LABEL = "添加到常用资源工具"
+MENU_BACKGROUND_LABEL = "添加当前文件夹到常用资源工具"
 WINDOW_CLASS = "FLUTTER_RUNNER_WIN32_WINDOW"
 report: dict[str, object] = {"probes": {}}
 
@@ -57,23 +61,29 @@ def write_json(path: Path, payload) -> None:
     )
 
 
-def read_menu_values() -> dict[str, str] | None:
+def _read_entry(key_path: str) -> dict[str, str] | None:
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, MENU_KEY) as key:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
             label = winreg.QueryValueEx(key, "")[0]
             icon = winreg.QueryValueEx(key, "Icon")[0]
-    except FileNotFoundError:
-        return None
     except OSError:
         return None
     try:
         with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, MENU_KEY + r"\command"
+            winreg.HKEY_CURRENT_USER, key_path + r"\command"
         ) as command_key:
             command = winreg.QueryValueEx(command_key, "")[0]
     except OSError:
         command = ""
     return {"label": label, "icon": icon, "command": command}
+
+
+def read_menu_values() -> dict[str, str] | None:
+    return _read_entry(MENU_KEY)
+
+
+def read_background_values() -> dict[str, str] | None:
+    return _read_entry(MENU_BACKGROUND_KEY)
 
 
 def menu_installed() -> bool:
@@ -163,14 +173,18 @@ def main() -> int:
         start_app()
         registered = wait_until(menu_installed, timeout=25.0)
         values = read_menu_values() or {}
+        background = read_background_values() or {}
         record(
             "context_menu_registered_on_start",
             registered
             and values.get("label") == MENU_LABEL
             and str(EXE) in values.get("icon", "")
             and str(EXE) in values.get("command", "")
-            and '--add-folder "%1"' in values.get("command", ""),
-            f"values={values}",
+            and '--add-folder "%1"' in values.get("command", "")
+            and background.get("label") == MENU_BACKGROUND_LABEL
+            and str(EXE) in background.get("icon", "")
+            and '--add-folder "%V"' in background.get("command", ""),
+            f"folder={values} background={background}",
         )
         record(
             "window_visible_after_launch",
@@ -242,15 +256,32 @@ def main() -> int:
         kill_app()
         write_json(settings_json, payload)
         start_app()
-        removed = wait_until(lambda: not menu_installed(), timeout=25.0)
-        record("toggle_off_removes_menu", removed, f"installed={menu_installed()}")
+        removed = wait_until(
+            lambda: not menu_installed()
+            and read_background_values() is None,
+            timeout=25.0,
+        )
+        record(
+            "toggle_off_removes_menu",
+            removed,
+            f"installed={menu_installed()} background="
+            f"{read_background_values() is not None}",
+        )
 
         payload["shellContextMenuEnabled"] = True
         kill_app()
         write_json(settings_json, payload)
         start_app()
-        restored = wait_until(menu_installed, timeout=25.0)
-        record("toggle_on_restores_menu", restored, f"installed={menu_installed()}")
+        restored = wait_until(
+            lambda: menu_installed() and read_background_values() is not None,
+            timeout=25.0,
+        )
+        record(
+            "toggle_on_restores_menu",
+            restored,
+            f"installed={menu_installed()} background="
+            f"{read_background_values() is not None}",
+        )
     finally:
         kill_app()
         if folders_backup is not None:
