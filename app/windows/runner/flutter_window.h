@@ -42,6 +42,12 @@ class FlutterWindow : public Win32Window {
   void RequestQuit();
   bool IsWindowVisibleNow();
 
+  // Brings the window to the foreground even when the app does not own the
+  // current foreground window (the global hotkey is handled by the Python
+  // backend, so Windows' foreground lock would otherwise keep the panel behind
+  // the previous app and the panel would never receive its dismissal/focus).
+  void ForceForeground();
+
   // Phase 16: compact "quick panel" mode. The window keeps its Flutter engine but
   // temporarily drops its frame, becomes topmost and shrinks to the requested
   // logical size, so the same UI can render a Spotlight-style tree HUD. Restoring
@@ -101,6 +107,10 @@ class FlutterWindow : public Win32Window {
   bool quick_mode_ = false;
   bool quick_was_visible_ = false;
   bool quick_dismiss_posted_ = false;
+  // True from the start of EnterQuickMode until the activation hand-off has
+  // settled: the spurious WM_ACTIVATE(WA_INACTIVE) produced while forcing the
+  // foreground must not close the panel immediately.
+  bool quick_activation_settling_ = false;
   LONG_PTR quick_saved_style_ = 0;
   LONG_PTR quick_saved_ex_style_ = 0;
   RECT quick_saved_rect_ = {};

@@ -1,4 +1,4 @@
-﻿// Shell tests driven by an in-memory fake, so they never spawn Python.
+// Shell tests driven by an in-memory fake, so they never spawn Python.
 //
 // The real backend path is covered by `backend_client_test.dart`; these tests are
 // about layout, i18n, filtering and theme — they must stay fast and offline.
@@ -1389,6 +1389,20 @@ void main() {
       greaterThan(exitIndex),
       reason: 'the full window is shown after the panel is gone',
     );
+    expect(find.byTooltip('新增资源'), findsOneWidget);
+  });
+
+  testWidgets('clicking the empty area of the quick panel closes it',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    api.emitHotkey('quickLinks');
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('新增资源'), findsNothing);
+
+    // Far below the small result list: the blank area must close the panel.
+    await tester.tapAt(const Offset(800, 900));
+    await tester.pumpAndSettle();
     expect(find.byTooltip('新增资源'), findsOneWidget);
   });
 

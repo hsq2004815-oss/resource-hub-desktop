@@ -512,6 +512,39 @@ class _QuickPanelState extends State<QuickPanel> {
   GlobalKey _keyFor(String rowKey) =>
       _rowKeys.putIfAbsent(rowKey, () => GlobalKey(debugLabel: rowKey));
 
+  /// Clicking the empty area below the last row closes the panel, like a popup.
+  ///
+  /// The gesture detector sits around the body, so a tap on a row or a chevron
+  /// is claimed by that row's own recognizer and never reaches this handler;
+  /// taps above the rows (search field, group headers) are ignored because the
+  /// pointer is not below the last row.
+  void _handleBlankTap(TapUpDetails details) {
+    final AppStrings t = context.l10n;
+    final List<_QuickRow> rows = _rows(t);
+    if (rows.isEmpty) {
+      widget.onClose();
+      return;
+    }
+    double? lastRowBottom;
+    for (final _QuickRow row in rows.reversed) {
+      final BuildContext? rowContext = _rowKeys[row.key]?.currentContext;
+      if (rowContext == null) {
+        continue;
+      }
+      final RenderObject? render = rowContext.findRenderObject();
+      if (render is! RenderBox || !render.hasSize) {
+        continue;
+      }
+      lastRowBottom =
+          render.localToGlobal(Offset(0, render.size.height)).dy;
+      break;
+    }
+    if (lastRowBottom != null &&
+        details.globalPosition.dy > lastRowBottom + 2) {
+      widget.onClose();
+    }
+  }
+
   // -- build --------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
@@ -550,7 +583,13 @@ class _QuickPanelState extends State<QuickPanel> {
         children: <Widget>[
           _buildSearchBar(context, t, scheme, text),
           Divider(height: 1, thickness: 1, color: scheme.outlineVariant),
-          Expanded(child: body),
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTapUp: _handleBlankTap,
+              child: body,
+            ),
+          ),
           _buildFooter(context, t, scheme, text),
         ],
       ),
@@ -817,6 +856,13 @@ class _QuickPanelState extends State<QuickPanel> {
           child: InkWell(
             key: _keyFor(row.key),
             borderRadius: AppRadius.smAll,
+            // The row's own animated background is the only hover/selection
+            // feedback: Material's default hover/highlight ink is dark and shows
+            // through the 120 ms colour transition as a black shimmer.
+            hoverColor: Colors.transparent,
+            highlightColor: Colors.transparent,
+            splashColor: Colors.transparent,
+            splashFactory: NoSplash.splashFactory,
             onTap: () => _activateRow(row, t),
             child: AnimatedContainer(
               duration: AppDurations.fast,
@@ -836,6 +882,9 @@ class _QuickPanelState extends State<QuickPanel> {
                         ? InkResponse(
                             onTap: () => unawaited(_toggleFolder(row, t)),
                             radius: 12,
+                            hoverColor: Colors.transparent,
+                            highlightColor: Colors.transparent,
+                            splashColor: Colors.transparent,
                             child: Center(
                               child: AnimatedRotation(
                                 turns: row.expanded ? 0.25 : 0,

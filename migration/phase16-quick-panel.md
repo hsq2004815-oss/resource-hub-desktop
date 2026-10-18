@@ -201,3 +201,43 @@ cd ..; D:\miniconda3\python.exe migration\tools\verify_quick_panel.py
 | 回归 | `verify_shell.py` 9 / 9 PASS；后端 172 / 172 |
 
 截图：`migration/screenshots/phase16-dismiss-fixed.png`（点击旁边收起后完整窗口正常还原）。
+
+---
+
+## 8. 修复记录 — Phase 16.2：焦点/空白点击/行高亮闪烁（用户反馈）
+
+**反馈**：① 弹出面板后焦点在搜索框，点击空白页无法直接关闭；② 用鼠标选择文件夹/网页时
+有明显的黑色阴影闪烁。
+
+**根因**：
+
+1. **前台激活不可靠**：全局热键由 Python 后端进程注册，Flutter 进程没有前台权；`SetForegroundWindow`
+   在另一个前台程序（如记事本）存在时会被系统拒绝，于是 HUD 窗口虽然出现，但系统焦点仍在原程序 ——
+   点击桌面/别的窗口不会让我们收到 `WM_ACTIVATE(WA_INACTIVE)`，所以不会自动关闭；Esc/输入也不可靠。
+2. **行内的 Material ink**：`InkWell` 默认的 hover/highlight 是 `onSurface` 深色（8%–12%），而行背景是用
+   `AnimatedContainer` 从透明渐变到浅蓝（120 ms），渐变期间深色 ink 会透出来 → 鼠标扫过/点选时看到
+   "黑色阴影闪烁"。
+3. 之前没有"点击面板内空白处关闭"的行为，只有失焦自动关闭。
+
+**修复**：
+
+- runner 新增 `ForceForeground()`：topmost 闪一下 + `SetForegroundWindow`，仍失败则用
+  `AttachThreadInput` 借用当前前台线程的输入队列再取前台；HUD 打开后重新置顶。
+  激活过程会产生一次瞬态 `WA_INACTIVE`，用 `quick_activation_settling_` + `kQuickActivationSettled`
+  消息忽略掉，避免面板刚出现就被自己关掉。
+- `QuickPanel` 行/箭头禁用 Material ink：`hoverColor/highlightColor/splashColor` 全透明 +
+  `NoSplash.splashFactory`，hover/选中只保留自绘的浅色背景。
+- `QuickPanel` 增加"空白处单击关闭"：在列表区域外层放 `GestureDetector`，只有点击位置在最后一行
+  下方时才关闭（行/箭头/分类标题的点击不会触发），空状态则点任意空白关闭。
+
+**验证**：
+
+| 场景 | 结果 |
+|---|---|
+| 记事本在前台 → 按快速键 | HUD 打开并成为前台（`foreground=True`），PASS |
+| 面板打开后点击桌面/其他程序 | 面板关闭；从托盘打开的场景直接回托盘 |
+| 点击面板内最后一行下方的空白 | 面板关闭；窗口可见时还原完整窗口 |
+| 记事本在前台 → 打开面板 → Esc | 面板关闭（键盘事件到达 HUD） |
+| Flutter 测试 | **60 / 60**（新增"点击面板空白关闭"） |
+| `verify_quick_panel.py` | 7 / 7 PASS（含 `foreground=True`） |
+| `verify_shell.py` | 9 / 9 PASS |

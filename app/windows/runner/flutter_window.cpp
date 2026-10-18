@@ -31,6 +31,11 @@ constexpr UINT kMenuExit = 1002;
 // Posted by a second instance to wake the window that already exists.
 const UINT kWakeMessage = ::RegisterWindowMessageW(kShowWindowMessageName);
 
+// Posted right after a quick-panel activation hand-off: clears
+// quick_activation_settling_ once the WM_ACTIVATE traffic caused by
+// ForceForeground() has been processed.
+constexpr UINT kQuickActivationSettled = WM_APP + 78;
+
 // Property key used to find the FlutterWindow instance from the subclassed
 // Flutter view window procedure.
 constexpr wchar_t kChildWindowProp[] = L"ResourceHubFlutterWindow";
@@ -385,14 +390,38 @@ void FlutterWindow::HideToTray() {
 void FlutterWindow::ShowFromTray() {
   ::ShowWindow(GetHandle(), SW_RESTORE);
   ::ShowWindow(GetHandle(), SW_SHOW);
+  ForceForeground();
+}
+
+void FlutterWindow::ForceForeground() {
+  HWND handle = GetHandle();
+  if (handle == nullptr) {
+    return;
+  }
   // Windows refuses SetForegroundWindow from a background process; briefly
   // becoming topmost is the trick the legacy app used (resource_hub.pyw:1437).
-  ::SetWindowPos(GetHandle(), HWND_TOPMOST, 0, 0, 0, 0,
+  ::SetWindowPos(handle, HWND_TOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE);
-  ::SetWindowPos(GetHandle(), HWND_NOTOPMOST, 0, 0, 0, 0,
+  ::SetWindowPos(handle, HWND_NOTOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE);
-  ::SetForegroundWindow(GetHandle());
-  HWND child = ::GetWindow(GetHandle(), GW_CHILD);
+  ::SetForegroundWindow(handle);
+  if (::GetForegroundWindow() != handle) {
+    // The global hotkey is owned by the backend process, so this process has no
+    // foreground rights. Attaching to the current foreground thread's input
+    // queue is the standard workaround and makes the hotkey panel really active
+    // (so Esc/typing work and clicking anywhere else fires WM_ACTIVATE).
+    const HWND foreground = ::GetForegroundWindow();
+    const DWORD foreground_thread =
+        foreground != nullptr ? ::GetWindowThreadProcessId(foreground, nullptr)
+                              : 0;
+    const DWORD this_thread = ::GetCurrentThreadId();
+    if (foreground_thread != 0 && foreground_thread != this_thread) {
+      ::AttachThreadInput(this_thread, foreground_thread, TRUE);
+      ::SetForegroundWindow(handle);
+      ::AttachThreadInput(this_thread, foreground_thread, FALSE);
+    }
+  }
+  HWND child = ::GetWindow(handle, GW_CHILD);
   if (child != nullptr) {
     ::SetFocus(child);
   }
@@ -469,16 +498,20 @@ bool FlutterWindow::EnterQuickMode(int logical_width, int logical_height) {
 
   quick_mode_ = true;
   quick_dismiss_posted_ = false;
+  quick_activation_settling_ = true;
   ::SetWindowPos(handle, HWND_TOPMOST, x, y, width, height,
                  SWP_FRAMECHANGED | SWP_SHOWWINDOW);
   ::ShowWindow(handle, SW_SHOWNORMAL);
-  // Windows refuses SetForegroundWindow from a background process; the short
-  // topmost round-trip above is the trick the legacy app used.
-  ::AllowSetForegroundWindow(ASFW_ANY);
-  ::SetForegroundWindow(handle);
-  if (HWND child = ::GetWindow(handle, GW_CHILD)) {
-    ::SetFocus(child);
-  }
+  // The Python backend owns the hotkey, so this process has no foreground
+  // rights; ForceForeground() takes them explicitly so the panel receives
+  // Esc/typing and a click anywhere else produces WM_ACTIVATE(WA_INACTIVE).
+  ForceForeground();
+  // Stay above normal windows again after the helper's topmost round-trip.
+  ::SetWindowPos(handle, HWND_TOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  // Forcing the foreground produces a transient WA_INACTIVE; only accept
+  // dismissal after that activation traffic has been drained.
+  ::PostMessageW(handle, kQuickActivationSettled, 0, 0);
   return true;
 }
 
@@ -492,6 +525,7 @@ void FlutterWindow::ExitQuickMode(int visibility) {
       visibility == 1 || (visibility == 0 && was_visible);
   quick_mode_ = false;
   quick_dismiss_posted_ = false;
+  quick_activation_settling_ = false;
   // Hide before restoring the frame when the window is going away: otherwise the
   // HUD-sized window briefly grows back on screen while Flutter still displays
   // the previous frame, leaving black margins around a stale tree (Phase 16 QA).
@@ -514,11 +548,7 @@ void FlutterWindow::ExitQuickMode(int visibility) {
     ::ShowWindow(handle, SW_RESTORE);
     ::ShowWindow(handle, SW_SHOW);
     if (visibility == 1) {
-      ::AllowSetForegroundWindow(ASFW_ANY);
-      ::SetForegroundWindow(handle);
-      if (HWND child = ::GetWindow(handle, GW_CHILD)) {
-        ::SetFocus(child);
-      }
+      ForceForeground();
     }
   }
   // Ask the engine for a fresh frame right after the resize instead of waiting
@@ -667,9 +697,18 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   // The quick panel is a "click-away to dismiss" overlay: losing activation (the
   // user clicked another app, the desktop, or a browser opened by the panel)
   // closes it. Dart decides whether the window should stay visible afterwards.
+  // Forcing the foreground for the quick panel briefly produces
+  // WM_ACTIVATE(WA_INACTIVE) traffic; ignore dismissal until the posted
+  // "settled" message arrives.
   if (quick_mode_ && message == WM_ACTIVATE &&
       LOWORD(wparam) == WA_INACTIVE) {
-    NotifyQuickDismissed();
+    if (!quick_activation_settling_) {
+      NotifyQuickDismissed();
+    }
+    return 0;
+  }
+  if (message == kQuickActivationSettled) {
+    quick_activation_settling_ = false;
     return 0;
   }
 
