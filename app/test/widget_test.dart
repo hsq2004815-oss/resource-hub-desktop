@@ -11,7 +11,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:resource_hub/data/backend_models.dart';
 import 'package:resource_hub/data/resource_api.dart';
 import 'package:resource_hub/design/app_theme.dart';
-import 'package:resource_hub/features/home/app_top_bar.dart';
 import 'package:resource_hub/features/home/home_page.dart';
 import 'package:resource_hub/features/home/resource_detail_panel.dart';
 import 'package:resource_hub/features/home/resource_form.dart';
@@ -498,17 +497,20 @@ void main() {
     await pumpApp(tester);
 
     expect(find.byType(HomePage), findsOneWidget);
-    expect(find.text('常用资源工具'), findsOneWidget);
+    expect(find.text('常用资源工具'), findsNothing);
     expect(find.text('已保存资源'), findsOneWidget);
     expect(find.text('项目主目录'), findsOneWidget);
   });
 
-  testWidgets('compact top bar replaces the old hero header',
+  testWidgets('in-content top bar is gone and settings live in the toolbar',
       (WidgetTester tester) async {
     await pumpApp(tester);
 
-    expect(find.byType(AppTopBar), findsOneWidget);
-    expect(tester.getSize(find.byType(AppTopBar)).height, AppTopBar.height);
+    // The window title is the native Windows title bar; content starts directly
+    // with the workspace header, and settings moved into the toolbar.
+    expect(find.text('常用资源工具'), findsNothing);
+    expect(find.byTooltip('设置'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('已保存资源')).dy, lessThan(120));
     // Hero block, feature chips and metric cards must be gone.
     expect(find.byType(StatCard), findsNothing);
     expect(find.text('轻量桌面资源中枢'), findsNothing);
@@ -521,7 +523,6 @@ void main() {
     await pumpApp(tester);
     await switchLanguage(tester, 'English');
 
-    expect(find.text('Resource Hub Desktop'), findsOneWidget);
     expect(find.text('Saved Resources'), findsOneWidget);
     expect(find.text('常用资源工具'), findsNothing);
   });
@@ -587,7 +588,7 @@ void main() {
     expect(Theme.of(context).brightness, Brightness.dark);
 
     final Color background = Theme.of(context).scaffoldBackgroundColor;
-    for (final String heading in <String>['已保存资源', '常用资源工具']) {
+    for (final String heading in <String>['已保存资源']) {
       final RenderParagraph paragraph =
           tester.renderObject<RenderParagraph>(find.text(heading).first);
       final Color? foreground = paragraph.text.style?.color;

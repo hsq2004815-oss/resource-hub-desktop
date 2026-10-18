@@ -26,7 +26,6 @@ import '../../widgets/app_button.dart';
 import '../../widgets/resource_grid.dart';
 import '../../widgets/resource_table.dart';
 import '../../widgets/status_bar.dart';
-import 'app_top_bar.dart';
 import 'resource_detail_panel.dart';
 import 'resource_form.dart';
 import 'resource_list_panel.dart';
@@ -1086,7 +1085,6 @@ class _HomePageState extends State<HomePage> {
     final Widget shell = Scaffold(
       body: Column(
         children: <Widget>[
-          AppTopBar(onOpenSettings: _openSettings),
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
@@ -1186,6 +1184,7 @@ class _HomePageState extends State<HomePage> {
                     onMoveItem: (ResourceItem item, int targetIndex) =>
                         unawaited(_handleMoveItem(item, targetIndex)),
                     onSortByAdded: () => unawaited(_sortByAdded()),
+                        onOpenSettings: _openSettings,
                       );
                     },
                   ),

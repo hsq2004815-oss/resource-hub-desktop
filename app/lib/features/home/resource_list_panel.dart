@@ -55,6 +55,7 @@ class ResourceListPanel extends StatelessWidget {
     required this.reorderEnabled,
     required this.onMoveItem,
     required this.onSortByAdded,
+    required this.onOpenSettings,
     this.detailsPanel,
   });
 
@@ -96,6 +97,10 @@ class ResourceListPanel extends StatelessWidget {
 
   /// One-shot "sort by date added (newest first)" from the overflow menu.
   final VoidCallback onSortByAdded;
+
+  /// Opens the settings dialog; lives in the toolbar since the in-content top
+  /// bar was removed (the native Windows title bar already names the window).
+  final VoidCallback onOpenSettings;
 
   /// Right-hand details panel, floated over the list content so the workspace
   /// header/toolbar above stays clickable.
@@ -299,6 +304,12 @@ class ResourceListPanel extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              ToolbarButton(
+                icon: Icons.settings_outlined,
+                tooltip: t.t('settings_button'),
+                onPressed: onOpenSettings,
               ),
             ],
           ),
