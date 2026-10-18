@@ -1,12 +1,26 @@
+# Python
 __pycache__/
+*.py[cod]
 build/
 dist/
 *.spec
-resource_hub_error.log
-
-sites.json
-folders.json
-
 .venv/
 env/
 venv/
+
+# Runtime logs
+resource_hub_error.log
+resource_hub_launcher.log
+
+# Per-user data (samples are tracked instead; keep the patterns root-only so
+# editor configs such as app/.vscode/settings.json stay tracked)
+/sites.json
+/folders.json
+/settings.json
+
+# Packaged releases (large binaries; rebuild with build-flutter-release.ps1)
+release/
+
+# Local tooling caches
+.codegraph/
+.workbuddy-ai/
