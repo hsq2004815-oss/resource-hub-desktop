@@ -105,11 +105,16 @@ class _ResourceDetailPanelState extends State<ResourceDetailPanel> {
       },
       child: Focus(
         focusNode: _panelFocus,
-        child: AnimatedSlide(
-          offset: _slide,
-          duration: AppDurations.normal,
-          curve: Curves.easeOutCubic,
-          child: Stack(
+        child: TapRegion(
+          // Clicking anywhere outside the panel (blank table area, another row,
+          // toolbar, status bar…) dismisses it; a row click both closes and
+          // immediately re-opens for the new selection, so switching is seamless.
+          onTapOutside: (_) => widget.onClose(),
+          child: AnimatedSlide(
+            offset: _slide,
+            duration: AppDurations.normal,
+            curve: Curves.easeOutCubic,
+            child: Stack(
             children: <Widget>[
               Container(
                 decoration: BoxDecoration(
@@ -167,6 +172,7 @@ class _ResourceDetailPanelState extends State<ResourceDetailPanel> {
               ),
             ],
           ),
+        ),
         ),
       ),
     );

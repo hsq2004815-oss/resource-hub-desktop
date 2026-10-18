@@ -90,7 +90,7 @@ so existing data can be migrated as-is.
 
 ```powershell
 cd app
-flutter test                                  # 48 tests: widgets, protocol, JSON
+flutter test                                  # 50 tests: widgets, protocol, JSON
 
 cd backend
 python -m unittest discover -s tests -t .     # 167 tests

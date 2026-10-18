@@ -1125,6 +1125,38 @@ void main() {
     expect(find.byType(ResourceDetailPanel), findsNothing);
   });
 
+  testWidgets('clicking a blank area closes the details panel',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    await tester.tap(find.text('项目主目录'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ResourceDetailPanel), findsOneWidget);
+
+    // Empty space below the rows, far from the panel on the right.
+    await tester.tapAt(const Offset(200, 900));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ResourceDetailPanel), findsNothing);
+  });
+
+  testWidgets('clicking inside the details panel keeps it open',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    await tester.tap(find.text('项目主目录'));
+    await tester.pumpAndSettle();
+
+    final Finder panelTitle = find.descendant(
+      of: find.byType(ResourceDetailPanel),
+      matching: find.text('项目主目录'),
+    );
+    await tester.tap(panelTitle.first);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ResourceDetailPanel), findsOneWidget);
+  });
+
   testWidgets('file rows open an info panel without a mind map',
       (WidgetTester tester) async {
     final FakeApi api = FakeApi();
