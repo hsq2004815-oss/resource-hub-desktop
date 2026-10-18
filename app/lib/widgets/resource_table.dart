@@ -372,8 +372,13 @@ class _TableRowState extends State<_TableRow> {
         : missing
         ? semantic.missingRowTint
         : _hovered
-        ? scheme.primary.withValues(alpha: 0.05)
-        : Colors.transparent;
+        // Rows are white "cards" on the page surface; hover is a faint primary
+        // wash blended over that white so the Material stays opaque.
+        ? Color.alphaBlend(
+            scheme.primary.withValues(alpha: 0.05),
+            scheme.surfaceContainerLowest,
+          )
+        : scheme.surfaceContainerLowest;
     final Color foreground = selected
         ? scheme.onPrimaryContainer
         : scheme.onSurface;

@@ -46,4 +46,6 @@
 - 列表行现在是页面底色，只有选中/hover/缺失路径才上色；如果你想要"每行是白色卡片"，
   可以给 `_TableRow` 的默认背景改成 `surfaceContainerLowest` 并保留行间距，但那会回到
   "块状列表" 的视觉，和现在的 M3 留白风格不一致。
+  （**后续**：Phase 14 已经按用户要求把默认行改回白色 `surfaceContainerLowest`，页面底色不变，
+  见 [`phase14-row-white.md`](phase14-row-white.md)。）
 - 表格外框和圆角已去掉；如果需要弱边界，可以只在滚动区域加一条发丝分割线。
