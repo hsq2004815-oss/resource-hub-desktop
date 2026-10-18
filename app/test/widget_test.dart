@@ -3,6 +3,7 @@
 // The real backend path is covered by `backend_client_test.dart`; these tests are
 // about layout, i18n, filtering and theme — they must stay fast and offline.
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -12,28 +13,114 @@ import 'package:resource_hub/data/resource_api.dart';
 import 'package:resource_hub/design/app_theme.dart';
 import 'package:resource_hub/features/home/app_top_bar.dart';
 import 'package:resource_hub/features/home/home_page.dart';
+import 'package:resource_hub/features/home/resource_detail_panel.dart';
 import 'package:resource_hub/features/home/resource_form.dart';
 import 'package:resource_hub/l10n/strings_scope.dart';
 import 'package:resource_hub/models/resource_item.dart';
 import 'package:resource_hub/platform/backend_client.dart';
 import 'package:resource_hub/widgets/app_card.dart';
 import 'package:resource_hub/widgets/app_fields.dart';
+import 'package:resource_hub/widgets/mind_map.dart';
 import 'package:resource_hub/widgets/resource_grid.dart';
 import 'package:resource_hub/widgets/resource_table.dart';
 
 class FakeApi implements ResourceApi {
-  FakeApi({List<ResourceItem>? folders, List<ResourceItem>? links})
-      : _folders = folders ?? _seedFolders(),
-        _links = links ?? _seedLinks();
+  FakeApi({
+    List<ResourceItem>? folders,
+    List<ResourceItem>? links,
+    Map<String, List<FsEntry>>? children,
+  })  : _folders = folders ?? _seedFolders(),
+        _links = links ?? _seedLinks(),
+        _children = children ?? _seedChildren();
 
   final List<ResourceItem> _folders;
   final List<ResourceItem> _links;
+  final Map<String, List<FsEntry>> _children;
 
   /// How often the shell fell back to the backend for open/reveal.
   int openCalls = 0;
   int revealCalls = 0;
 
+  /// Filesystem browsing (details panel).
+  int listChildrenCalls = 0;
+  int openPathCalls = 0;
+  int revealPathCalls = 0;
+  String? lastOpenedPath;
+  String? lastRevealedPath;
+
   List<ResourceItem> _bucket(ViewMode mode) => mode.isLinks ? _links : _folders;
+
+  static Map<String, List<FsEntry>> _seedChildren() => <String, List<FsEntry>>{
+        r'D:\Workspace\resource-hub': <FsEntry>[
+          FsEntry(
+            name: 'src',
+            path: r'D:\Workspace\resource-hub\src',
+            kind: FsEntryKind.folder,
+          ),
+          FsEntry(
+            name: 'docs',
+            path: r'D:\Workspace\resource-hub\docs',
+            kind: FsEntryKind.folder,
+          ),
+          FsEntry(
+            name: 'README.md',
+            path: r'D:\Workspace\resource-hub\README.md',
+            kind: FsEntryKind.file,
+          ),
+        ],
+        r'D:\Workspace\resource-hub\src': <FsEntry>[
+          FsEntry(
+            name: 'main.dart',
+            path: r'D:\Workspace\resource-hub\src\main.dart',
+            kind: FsEntryKind.file,
+          ),
+          FsEntry(
+            name: 'widgets',
+            path: r'D:\Workspace\resource-hub\src\widgets',
+            kind: FsEntryKind.folder,
+          ),
+        ],
+        r'D:\Workspace\resource-hub\src\widgets': <FsEntry>[],
+      };
+
+  @override
+  Future<FsListing> listChildren(String path) async {
+    listChildrenCalls += 1;
+    final List<FsEntry>? entries = _children[path];
+    if (entries == null) {
+      throw const BackendException(
+        'operation_failed',
+        'path does not exist',
+        key: 'fs_not_found',
+      );
+    }
+    final List<FsEntry> sorted = List<FsEntry>.of(entries)
+      ..sort((FsEntry a, FsEntry b) {
+        final int byKind =
+            (a.isFolder ? 0 : 1).compareTo(b.isFolder ? 0 : 1);
+        return byKind != 0
+            ? byKind
+            : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+    return FsListing(
+      path: path,
+      entries: sorted,
+      total: sorted.length,
+      truncated: false,
+    );
+  }
+
+  @override
+  Future<void> openPath(String path) async {
+    openPathCalls += 1;
+    lastOpenedPath = path;
+  }
+
+  @override
+  Future<void> revealPath(String path) async {
+    revealPathCalls += 1;
+    lastRevealedPath = path;
+  }
 
   static List<ResourceItem> _seedLinks() => <ResourceItem>[
         ResourceItem(
@@ -664,7 +751,9 @@ void main() {
 
     await tester.tap(find.text('项目主目录'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('打开'));
+    // The row click also opens the details panel, which has its own 打开 button;
+    // the toolbar one comes first in the tree.
+    await tester.tap(find.byTooltip('打开').first);
     await tester.pumpAndSettle();
 
     // Widget tests have no platform channel, so the runner path is unavailable
@@ -922,6 +1011,131 @@ void main() {
     expect(find.text('排序保存失败，已恢复原顺序'), findsOneWidget);
     expect(find.text('撤销'), findsNothing);
     expect(folderIds(api), <String>['f1', 'f2', 'f3']);
+  });
+
+  testWidgets('clicking a folder row opens the details mind map',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    await tester.tap(find.text('项目主目录'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ResourceDetailPanel), findsOneWidget);
+    expect(find.byType(MindMap), findsOneWidget);
+    expect(api.listChildrenCalls, 1);
+    expect(find.text('src'), findsOneWidget);
+    expect(find.text('docs'), findsOneWidget);
+    expect(find.text('README.md'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ResourceDetailPanel), findsNothing);
+  });
+
+  testWidgets('expanding a mind map node loads exactly one more level',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    await tester.tap(find.text('项目主目录'));
+    await tester.pumpAndSettle();
+
+    // Selecting a folder reveals its hover toggle (tooltip 展开).
+    await tester.tap(find.text('src'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('展开'), findsWidgets);
+
+    await tester.tap(find.byTooltip('展开').first);
+    await tester.pumpAndSettle();
+
+    expect(api.listChildrenCalls, 2);
+    expect(api.lastOpenedPath, isNull);
+    expect(find.text('main.dart'), findsOneWidget);
+    expect(find.text('widgets'), findsOneWidget);
+
+    // The first 收起 belongs to the just-expanded node; collapsing hides its
+    // children again.
+    await tester.tap(find.byTooltip('收起').first);
+    await tester.pumpAndSettle();
+    expect(find.text('main.dart'), findsNothing);
+  });
+
+  testWidgets('double-clicking a mind map node opens it through the shell api',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    await tester.tap(find.text('项目主目录'));
+    await tester.pumpAndSettle();
+
+    final Finder node = find.text('docs');
+    await tester.tap(node);
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.tap(node);
+    await tester.pumpAndSettle();
+
+    expect(api.openPathCalls, 1);
+    expect(api.lastOpenedPath, r'D:\Workspace\resource-hub\docs');
+  });
+
+  testWidgets('a mind map node can be added as a resource from its context menu',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    await tester.tap(find.text('项目主目录'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('docs'), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    expect(find.text('添加为资源'), findsOneWidget);
+
+    await tester.tap(find.text('添加为资源'));
+    await tester.pumpAndSettle();
+
+    expect(api.folders.first.path, r'D:\Workspace\resource-hub\docs');
+    expect(find.textContaining('已添加资源：docs'), findsOneWidget);
+  });
+
+  testWidgets('zoom buttons change the mind map scale',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    await tester.tap(find.text('项目主目录'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('100%'), findsOneWidget);
+    await tester.tap(find.byTooltip('放大'));
+    await tester.pumpAndSettle();
+    expect(find.text('125%'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('缩小'));
+    await tester.pumpAndSettle();
+    expect(find.text('100%'), findsOneWidget);
+  });
+
+  testWidgets('Escape closes the details panel', (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    await tester.tap(find.text('项目主目录'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ResourceDetailPanel), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byType(ResourceDetailPanel), findsNothing);
+  });
+
+  testWidgets('file rows open an info panel without a mind map',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    await tester.tap(find.text('预算表 2026'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ResourceDetailPanel), findsOneWidget);
+    expect(find.byType(MindMap), findsNothing);
+    expect(find.text(r'D:\Finance\budget.xlsx'), findsWidgets);
   });
 
   test('translation table keeps zh/en key parity', () {

@@ -8,6 +8,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -26,6 +27,7 @@ import '../../widgets/resource_grid.dart';
 import '../../widgets/resource_table.dart';
 import '../../widgets/status_bar.dart';
 import 'app_top_bar.dart';
+import 'resource_detail_panel.dart';
 import 'resource_form.dart';
 import 'resource_list_panel.dart';
 import 'settings_dialog.dart';
@@ -123,6 +125,11 @@ class _HomePageState extends State<HomePage> {
   bool _favoritesOnly = false;
   ResourceLayout _layout = ResourceLayout.list;
 
+  /// Right-hand details panel (Phase 9): opened by a completed row click,
+  /// non-modal, width is remembered for the session.
+  bool _detailOpen = false;
+  double _detailWidth = 560;
+
   _Status? _status;
   _UndoAction? _undo;
   Timer? _undoTimer;
@@ -204,6 +211,7 @@ class _HomePageState extends State<HomePage> {
         setState(() {
           _mode = ViewMode.folders;
           _selectedId = null;
+          _detailOpen = false;
           _categoryFilter = kAllCategories;
           _query = '';
           _search.clear();
@@ -317,6 +325,7 @@ class _HomePageState extends State<HomePage> {
       }
       setState(() {
         _selectedId = null;
+        _detailOpen = false;
       });
       _setStatus(
         outcome.skipped > 0
@@ -824,7 +833,10 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) {
         return;
       }
-      setState(() => _selectedId = null);
+      setState(() {
+        _selectedId = null;
+        _detailOpen = false;
+      });
       _setStatus(
         _Status(
           key: _mode.isLinks ? 'link_deleted' : 'folder_deleted',
@@ -896,6 +908,87 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // -- details panel (Phase 9) --------------------------------------------
+  void _previewItem(ResourceItem item) {
+    setState(() {
+      _selectedId = item.id;
+      _detailOpen = true;
+    });
+  }
+
+  void _closeDetail() {
+    if (!mounted) {
+      return;
+    }
+    setState(() => _detailOpen = false);
+  }
+
+  Future<void> _openDetailPath(String path) async {
+    final AppStrings strings = context.l10n;
+    try {
+      final bool handled = await NativeShell.openTarget(path);
+      if (!handled) {
+        await _repo.openPath(path);
+      }
+      _setStatus(_Status(text: '${strings.t('open')}: $path'));
+    } on BackendException catch (error) {
+      _setStatus(_Status.fromError(error));
+    }
+  }
+
+  Future<void> _revealDetailPath(String path) async {
+    final AppStrings strings = context.l10n;
+    try {
+      final bool handled = await NativeShell.revealPath(path);
+      if (!handled) {
+        await _repo.revealPath(path);
+      }
+      _setStatus(_Status(text: '${strings.t('open_location')}: $path'));
+    } on BackendException catch (error) {
+      _setStatus(_Status.fromError(error));
+    }
+  }
+
+  void _copyText(String value) {
+    Clipboard.setData(ClipboardData(text: value));
+    _setStatus(_Status(key: 'copied_path', tone: StatusTone.success));
+  }
+
+  /// Adds a folder/file discovered inside the preview map as a stored resource.
+  Future<void> _addResourceFromPreview(FsEntry entry) async {
+    if (_dataCorrupt) {
+      _setStatus(_Status(key: 'data_corrupt'));
+      return;
+    }
+    try {
+      if (_mode.isLinks) {
+        _handleModeChanged(ViewMode.folders);
+      }
+      final ResourceItem saved = await _repo.add(
+        ViewMode.folders,
+        name: entry.name,
+        target: entry.path,
+      );
+      await _reload(ViewMode.folders);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _selectedId = saved.id;
+        _detailOpen = true;
+      });
+      _setStatus(
+        _Status(
+          key: 'added_as_resource',
+          args: <Object?>[saved.name],
+          tone: StatusTone.success,
+        ),
+      );
+    } on BackendException catch (error) {
+      _setStatus(_Status.fromError(error));
+    }
+  }
+
   Future<void> _checkPaths() async {
     try {
       final PathCheckOutcome outcome = await _repo.checkPaths(_mode);
@@ -934,6 +1027,7 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _mode = mode;
       _selectedId = null;
+      _detailOpen = false;
       _categoryFilter = kAllCategories;
       _query = '';
       _search.clear();
@@ -996,8 +1090,44 @@ class _HomePageState extends State<HomePage> {
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : ResourceListPanel(
-                    mode: _mode,
+                : LayoutBuilder(
+                    builder: (BuildContext context, BoxConstraints constraints) {
+                      final double maxDetailWidth = math.max(
+                        420.0,
+                        math.min(760.0, constraints.maxWidth - 320),
+                      );
+                      final double detailWidth =
+                          _detailWidth.clamp(420.0, maxDetailWidth);
+                      final ResourceItem? detailItem =
+                          _detailOpen ? _selected : null;
+                      return ResourceListPanel(
+                        detailsPanel: detailItem == null
+                            ? null
+                            : SizedBox(
+                                width: detailWidth,
+                                child: ResourceDetailPanel(
+                                  key: ValueKey<String>(
+                                    '${detailItem.id}-${_mode.name}',
+                                  ),
+                                  item: detailItem,
+                                  loadChildren: _repo.listChildren,
+                                  onClose: _closeDetail,
+                                  onResize: (double dx) => setState(() {
+                                    _detailWidth = (_detailWidth - dx)
+                                        .clamp(420.0, maxDetailWidth);
+                                  }),
+                                  onOpenItem: _open,
+                                  onRevealItem: _reveal,
+                                  onEditItem: (ResourceItem item) =>
+                                      _openEditor(item: item),
+                                  onToggleFavoriteItem: _toggleFavorite,
+                                  onOpenPath: _openDetailPath,
+                                  onRevealPath: _revealDetailPath,
+                                  onAddResource: _addResourceFromPreview,
+                                  onCopyText: _copyText,
+                                ),
+                              ),
+                        mode: _mode,
                     items: visible,
                     allItems: _current,
                     categories: _categories,
@@ -1015,6 +1145,7 @@ class _HomePageState extends State<HomePage> {
                     onAdd: () => _openEditor(),
                     onSelected: (ResourceItem item) =>
                         setState(() => _selectedId = item.id),
+                    onPreview: _previewItem,
                     onSearchChanged: (String value) =>
                         setState(() => _query = value),
                     onCategoryFilterChanged: (String value) =>
@@ -1055,6 +1186,8 @@ class _HomePageState extends State<HomePage> {
                     onMoveItem: (ResourceItem item, int targetIndex) =>
                         unawaited(_handleMoveItem(item, targetIndex)),
                     onSortByAdded: () => unawaited(_sortByAdded()),
+                      );
+                    },
                   ),
           ),
           AppStatusBar(

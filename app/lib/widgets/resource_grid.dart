@@ -39,6 +39,7 @@ class ResourceGrid extends StatefulWidget {
     required this.actions,
     required this.reorderEnabled,
     required this.onMoveItem,
+    this.onPreview,
     this.emptyState,
   });
 
@@ -51,6 +52,9 @@ class ResourceGrid extends StatefulWidget {
   /// False while a search is active (or a reorder is already being saved).
   final bool reorderEnabled;
   final ResourceMoveCallback onMoveItem;
+
+  /// A completed click (not a drag): opens the details panel.
+  final ValueChanged<ResourceItem>? onPreview;
   final Widget? emptyState;
 
   @override
@@ -255,6 +259,7 @@ class _ResourceGridState extends State<ResourceGrid> {
                 showRightLine: _dropSlot == widget.items.length &&
                     index == widget.items.length - 1,
                 onSelected: () => widget.onSelected(item),
+                onPreview: widget.onPreview,
                 onDragStarted: () => _handleDragStarted(index),
                 onDragUpdate: _handleDragUpdate,
                 onDragEnd: _handleDragEnd,
@@ -280,6 +285,7 @@ class _ResourceCard extends StatefulWidget {
     required this.showLeftLine,
     required this.showRightLine,
     required this.onSelected,
+    this.onPreview,
     required this.onDragStarted,
     required this.onDragUpdate,
     required this.onDragEnd,
@@ -295,6 +301,7 @@ class _ResourceCard extends StatefulWidget {
   final bool showLeftLine;
   final bool showRightLine;
   final VoidCallback onSelected;
+  final ValueChanged<ResourceItem>? onPreview;
   final VoidCallback onDragStarted;
   final ValueChanged<Offset> onDragUpdate;
   final VoidCallback onDragEnd;
@@ -419,7 +426,9 @@ class _ResourceCardState extends State<_ResourceCard> {
           ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
-            onTap: widget.onSelected,
+            onTap: widget.onPreview != null
+                ? () => widget.onPreview!(item)
+                : widget.onSelected,
             onDoubleTap: () => widget.actions.onOpen?.call(item),
             onSecondaryTapDown: (TapDownDetails details) =>
                 _showContextMenu(context, details.globalPosition),

@@ -57,6 +57,7 @@ class HelloTests(ProtocolTestCase):
         self.assertIsNone(result["loadError"])
         self.assertIn("resources.list", result["methods"])
         self.assertIn("resources.reorder", result["methods"])
+        self.assertIn("fs.children", result["methods"])
         self.assertIn("hotkey.start", result["methods"])
 
     def test_hello_on_corrupt_data(self) -> None:
@@ -234,6 +235,52 @@ class ResourceTests(ProtocolTestCase):
         )["result"]["item"]["id"]
         with mock.patch("resource_hub_core.protocol.reveal_path") as revealer:
             frame = self.call("resources.reveal", {"mode": "folders", "id": item_id})
+        self.assertTrue(frame["ok"])
+        revealer.assert_called_once_with(str(target))
+
+
+class FsTests(ProtocolTestCase):
+    def test_children_lists_folders_first(self) -> None:
+        root = self.dir / "listing"
+        root.mkdir()
+        (root / "beta").mkdir()
+        (root / "Alpha").mkdir()
+        (root / "note.txt").write_text("x", encoding="utf-8")
+
+        result = self.call("fs.children", {"path": str(root)})["result"]
+
+        self.assertEqual(
+            [entry["name"] for entry in result["entries"]],
+            ["Alpha", "beta", "note.txt"],
+        )
+        self.assertEqual(result["total"], 3)
+        self.assertEqual(result["shown"], 3)
+        self.assertFalse(result["truncated"])
+
+    def test_children_missing_path_reports_operation_failure(self) -> None:
+        frame = self.call("fs.children", {"path": str(self.dir / "nope")})
+        self.assertFalse(frame["ok"])
+        self.assertEqual(frame["error"]["code"], "operation_failed")
+        self.assertEqual(frame["error"]["key"], "fs_not_found")
+
+    def test_children_requires_a_path(self) -> None:
+        frame = self.call("fs.children", {})
+        self.assertFalse(frame["ok"])
+        self.assertEqual(frame["error"]["code"], "bad_request")
+
+    def test_open_delegates_to_launcher(self) -> None:
+        target = self.dir / "open-me"
+        target.mkdir()
+        with mock.patch("resource_hub_core.fs.open_path") as opener:
+            frame = self.call("fs.open", {"path": str(target)})
+        self.assertTrue(frame["ok"])
+        opener.assert_called_once_with(str(target))
+
+    def test_reveal_delegates_to_launcher(self) -> None:
+        target = self.dir / "reveal-me"
+        target.mkdir()
+        with mock.patch("resource_hub_core.fs.reveal_path") as revealer:
+            frame = self.call("fs.reveal", {"path": str(target)})
         self.assertTrue(frame["ok"])
         revealer.assert_called_once_with(str(target))
 

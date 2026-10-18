@@ -41,6 +41,7 @@ class ResourceListPanel extends StatelessWidget {
     required this.onModeChanged,
     required this.onAdd,
     required this.onSelected,
+    this.onPreview,
     required this.onSearchChanged,
     required this.onCategoryFilterChanged,
     required this.onToggleFavoritesOnly,
@@ -54,6 +55,7 @@ class ResourceListPanel extends StatelessWidget {
     required this.reorderEnabled,
     required this.onMoveItem,
     required this.onSortByAdded,
+    this.detailsPanel,
   });
 
   final ViewMode mode;
@@ -73,6 +75,9 @@ class ResourceListPanel extends StatelessWidget {
   final ValueChanged<ViewMode> onModeChanged;
   final VoidCallback onAdd;
   final ValueChanged<ResourceItem> onSelected;
+
+  /// Single click on a row/card: opens the details panel.
+  final ValueChanged<ResourceItem>? onPreview;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onCategoryFilterChanged;
   final VoidCallback onToggleFavoritesOnly;
@@ -91,6 +96,10 @@ class ResourceListPanel extends StatelessWidget {
 
   /// One-shot "sort by date added (newest first)" from the overflow menu.
   final VoidCallback onSortByAdded;
+
+  /// Right-hand details panel, floated over the list content so the workspace
+  /// header/toolbar above stays clickable.
+  final Widget? detailsPanel;
 
   bool get _hasSelection => selectedId != null;
 
@@ -296,28 +305,43 @@ class ResourceListPanel extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           // -- content ------------------------------------------------------
           Expanded(
-            child: layout == ResourceLayout.grid
-                ? ResourceGrid(
-                    items: items,
-                    mode: mode,
-                    selectedId: selectedId,
-                    onSelected: onSelected,
-                    actions: actions,
-                    reorderEnabled: reorderEnabled,
-                    onMoveItem: onMoveItem,
-                    emptyState: emptyState,
-                  )
-                : ResourceTable(
-                    items: items,
-                    mode: mode,
-                    selectedId: selectedId,
-                    onSelected: onSelected,
-                    actions: actions,
-                    scrollController: scrollController,
-                    reorderEnabled: reorderEnabled,
-                    onMoveItem: onMoveItem,
-                    emptyState: emptyState,
+            child: Stack(
+              children: <Widget>[
+                Positioned.fill(
+                  child: layout == ResourceLayout.grid
+                      ? ResourceGrid(
+                          items: items,
+                          mode: mode,
+                          selectedId: selectedId,
+                          onSelected: onSelected,
+                          onPreview: onPreview,
+                          actions: actions,
+                          reorderEnabled: reorderEnabled,
+                          onMoveItem: onMoveItem,
+                          emptyState: emptyState,
+                        )
+                      : ResourceTable(
+                          items: items,
+                          mode: mode,
+                          selectedId: selectedId,
+                          onSelected: onSelected,
+                          onPreview: onPreview,
+                          actions: actions,
+                          scrollController: scrollController,
+                          reorderEnabled: reorderEnabled,
+                          onMoveItem: onMoveItem,
+                          emptyState: emptyState,
+                        ),
+                ),
+                if (detailsPanel != null)
+                  Positioned(
+                    top: 0,
+                    bottom: 0,
+                    right: 0,
+                    child: detailsPanel!,
                   ),
+              ],
+            ),
           ),
         ],
       ),

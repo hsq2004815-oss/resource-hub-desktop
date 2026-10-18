@@ -162,3 +162,66 @@ class HotkeyStatus {
   /// `"disabled"`, `"unavailable"`, or null when registered.
   final String? reason;
 }
+
+/// What a `fs.children` entry is.
+enum FsEntryKind { folder, file }
+
+/// One child returned by `fs.children` (folder preview panel).
+class FsEntry {
+  const FsEntry({
+    required this.name,
+    required this.path,
+    required this.kind,
+    this.isLink = false,
+  });
+
+  final String name;
+  final String path;
+  final FsEntryKind kind;
+
+  /// Symlink / Windows reparse point (junction); shown with a small badge.
+  final bool isLink;
+
+  bool get isFolder => kind == FsEntryKind.folder;
+
+  factory FsEntry.fromJson(Map<String, dynamic> json) {
+    return FsEntry(
+      name: json['name'] as String? ?? '',
+      path: json['path'] as String? ?? '',
+      kind: json['kind'] == 'folder' ? FsEntryKind.folder : FsEntryKind.file,
+      isLink: json['isLink'] == true,
+    );
+  }
+}
+
+/// One directory level returned by `fs.children`.
+class FsListing {
+  const FsListing({
+    required this.path,
+    required this.entries,
+    required this.total,
+    required this.truncated,
+  });
+
+  final String path;
+  final List<FsEntry> entries;
+
+  /// Total children on disk (may exceed [entries] when capped).
+  final int total;
+  final bool truncated;
+
+  int get shown => entries.length;
+  int get remaining => total - shown;
+
+  factory FsListing.fromJson(Map<String, dynamic> json) {
+    return FsListing(
+      path: json['path'] as String? ?? '',
+      entries: (json['entries'] as List<dynamic>? ?? <dynamic>[])
+          .map((dynamic e) => FsEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      total: json['total'] as int? ?? 0,
+      truncated: json['truncated'] == true,
+    );
+  }
+}
+

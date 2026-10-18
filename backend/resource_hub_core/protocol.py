@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, IO, Mapping
 
+from .fs import list_children, open_fs_path, reveal_fs_path
 from .hotkey import GlobalHotkeyListener, is_combination_available
 from .launcher import open_link, open_path, reveal_path
 from .models import ALL_CATEGORIES
@@ -144,6 +145,9 @@ class Dispatcher:
             "resources.drop": self._drop,
             "resources.export": self._export,
             "resources.import": self._import,
+            "fs.children": self._fs_children,
+            "fs.open": self._fs_open,
+            "fs.reveal": self._fs_reveal,
             "settings.get": self._settings_get,
             "settings.set": self._settings_set,
             "settings.probeHotkey": self._probe_hotkey,
@@ -330,6 +334,26 @@ class Dispatcher:
             raise ProtocolError("bad_request", "params.items must be an array")
         result = self.state.service.import_payload(mode, items)
         return {"imported": result.imported, "skipped": result.skipped}
+
+    # -- filesystem browsing (preview panel, read-only) --------------------
+    def _fs_children(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        path = self._require_str(params, "path")
+        listing = list_children(path)
+        return {
+            "path": listing.path,
+            "entries": [entry.to_json() for entry in listing.entries],
+            "total": listing.total,
+            "shown": listing.shown,
+            "truncated": listing.truncated,
+        }
+
+    def _fs_open(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        open_fs_path(self._require_str(params, "path"))
+        return {"opened": True}
+
+    def _fs_reveal(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        reveal_fs_path(self._require_str(params, "path"))
+        return {"revealed": True}
 
     # -- settings ----------------------------------------------------------
     def _settings_get(self, params: Mapping[str, Any]) -> dict[str, Any]:

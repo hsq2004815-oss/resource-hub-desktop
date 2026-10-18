@@ -124,6 +124,22 @@ void main() {
     );
   });
 
+  test('fs.children lists one directory level folders first', () async {
+    final Directory nested = Directory('${tempDir.path}/nested')..createSync();
+    Directory('${nested.path}/sub').createSync();
+    File('${nested.path}/note.txt').writeAsStringSync('x');
+
+    final Map<String, dynamic> result = await client.call(
+      'fs.children',
+      <String, dynamic>{'path': nested.path},
+    );
+    final List<String> names = (result['entries'] as List<dynamic>)
+        .map((dynamic e) => (e as Map<String, dynamic>)['name'] as String)
+        .toList();
+    expect(names, <String>['sub', 'note.txt']);
+    expect(result['truncated'], isFalse);
+  });
+
   test('structured errors surface code and i18n key', () async {
     await expectLater(
       client.call(

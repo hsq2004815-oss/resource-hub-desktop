@@ -203,6 +203,25 @@ class BackendRepository implements ResourceApi {
     );
   }
 
+  @override
+  Future<FsListing> listChildren(String path) async {
+    final Map<String, dynamic> result = await client.call(
+      'fs.children',
+      <String, dynamic>{'path': path},
+    );
+    return FsListing.fromJson(result);
+  }
+
+  @override
+  Future<void> openPath(String path) async {
+    await client.call('fs.open', <String, dynamic>{'path': path});
+  }
+
+  @override
+  Future<void> revealPath(String path) async {
+    await client.call('fs.reveal', <String, dynamic>{'path': path});
+  }
+
   Future<AppSettings> loadSettings() async {
     final Map<String, dynamic> result = await client.call('settings.get');
     return AppSettings.fromJson(result['settings'] as Map<String, dynamic>);

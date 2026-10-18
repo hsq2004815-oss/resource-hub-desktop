@@ -158,6 +158,7 @@ class ResourceTable extends StatelessWidget {
     required this.scrollController,
     required this.reorderEnabled,
     required this.onMoveItem,
+    this.onPreview,
     this.emptyState,
   });
 
@@ -171,6 +172,9 @@ class ResourceTable extends StatelessWidget {
   /// False while a search is active (or a reorder is already being saved).
   final bool reorderEnabled;
   final ResourceMoveCallback onMoveItem;
+
+  /// A completed click (not a drag): opens the details panel.
+  final ValueChanged<ResourceItem>? onPreview;
   final Widget? emptyState;
 
   List<_Column> _columns(BuildContext context) {
@@ -263,6 +267,7 @@ class ResourceTable extends StatelessWidget {
                             selected: item.id == selectedId,
                             reorderEnabled: reorderEnabled,
                             onTap: () => onSelected(item),
+                            onPreview: onPreview,
                             actions: actions,
                           );
                         },
@@ -326,6 +331,7 @@ class _TableRow extends StatefulWidget {
     required this.selected,
     required this.reorderEnabled,
     required this.onTap,
+    this.onPreview,
     required this.actions,
   });
 
@@ -336,6 +342,7 @@ class _TableRow extends StatefulWidget {
   final bool selected;
   final bool reorderEnabled;
   final VoidCallback onTap;
+  final ValueChanged<ResourceItem>? onPreview;
   final ResourceTableActions actions;
 
   @override
@@ -396,7 +403,9 @@ class _TableRowState extends State<_TableRow> {
         child: Material(
           color: background,
           child: InkWell(
-            onTap: widget.onTap,
+            onTap: widget.onPreview != null
+                ? () => widget.onPreview!(item)
+                : widget.onTap,
             onDoubleTap: () => widget.actions.onOpen?.call(item),
             onSecondaryTapDown: (TapDownDetails details) =>
                 _showContextMenu(context, details.globalPosition),

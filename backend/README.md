@@ -57,7 +57,7 @@ except ValidationError as exc:
 D:\miniconda3\python.exe -m unittest discover -s tests -t .
 ```
 
-152 tests, no third-party packages required.
+167 tests, no third-party packages required.
 
 ## Protocol server
 
@@ -75,3 +75,23 @@ D:\miniconda3\python.exe backend\main.py "D:\Apps\ResourceHub"
 
 See `migration/phase4-ipc-protocol.md` for the full frame spec, method table and
 error codes. stdout carries protocol frames only; diagnostics go to stderr.
+
+## Filesystem browsing (Phase 9)
+
+The folder preview panel expands one directory level at a time through read-only
+methods; they never touch `sites.json` / `folders.json`:
+
+```
+→ {"id":9,"method":"fs.children","params":{"path":"D:\\Books"}}
+← {"id":9,"ok":true,"result":{"path":"D:\\Books","entries":[
+     {"name":"Design","path":"D:\\Books\\Design","kind":"folder","isLink":false}],
+     "total":42,"shown":42,"truncated":false}}
+→ {"id":10,"method":"fs.open","params":{"path":"D:\\Books\\Design"}}
+→ {"id":11,"method":"fs.reveal","params":{"path":"D:\\Books\\Design"}}
+```
+
+`fs.children` reads a single level, sorts folders first (then name), returns at
+most 200 entries while still counting the directory (so the UI can show "N more
+items"), and maps missing/not-a-directory/permission errors to i18n keys
+(`fs_not_found`, `fs_not_directory`, `fs_permission_denied`, `fs_unreadable`).
+See `migration/phase9-folder-preview.md`.

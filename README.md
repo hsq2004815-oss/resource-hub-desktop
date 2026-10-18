@@ -6,6 +6,8 @@ websites, local folders and single files.
 - Two resource types: links (sites) and local paths (folders / files)
 - Search, category filters, favorites (a star, no longer pinned)
 - Drag rows or cards to arrange the order (list and grid), with a 5-second undo
+- Click a resource to open the details panel: a zoomable folder mind map (folders)
+  or link/file details, without leaving the list
 - Drag and drop files or folders onto the window to add them
 - Import / export JSON backups (compatible with the legacy Python version)
 - Tray icon, global hotkey (`Ctrl + Alt + Space` by default), optional startup
@@ -88,10 +90,10 @@ so existing data can be migrated as-is.
 
 ```powershell
 cd app
-flutter test                                  # 40 tests: widgets, protocol, JSON
+flutter test                                  # 48 tests: widgets, protocol, JSON
 
 cd backend
-python -m unittest discover -s tests -t .     # 152 tests
+python -m unittest discover -s tests -t .     # 167 tests
 ```
 
 ## Notes

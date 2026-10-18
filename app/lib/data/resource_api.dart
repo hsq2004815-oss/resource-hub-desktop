@@ -74,6 +74,17 @@ abstract interface class ResourceApi {
     List<Map<String, dynamic>> items,
   );
 
+  /// One directory level under [path], for the folder preview panel.
+  ///
+  /// Read-only and lazy: the panel calls this once per expanded node.
+  Future<FsListing> listChildren(String path);
+
+  /// Opens an arbitrary discovered folder/file with the shell handler.
+  Future<void> openPath(String path);
+
+  /// Reveals an arbitrary discovered folder/file in Explorer.
+  Future<void> revealPath(String path);
+
   /// Whether [hotkeyId] can be registered right now.
   Future<bool> probeHotkey(String hotkeyId);
 
