@@ -112,6 +112,8 @@ class ImportOutcome {
 const String kDefaultGlobalHotkey = 'Ctrl + Alt + Space';
 const String kDefaultQuickLinksHotkey = 'Ctrl + Alt + Shift + L';
 const String kDefaultQuickFoldersHotkey = 'Ctrl + Alt + Shift + F';
+const bool kDefaultBookmarkSyncEnabled = true;
+const String kDefaultBookmarkCustomDir = '';
 
 /// Settings as stored by the backend (`settings.json`).
 class AppSettings {
@@ -121,6 +123,8 @@ class AppSettings {
     this.globalHotkeyId = kDefaultGlobalHotkey,
     this.quickLinksHotkeyId = kDefaultQuickLinksHotkey,
     this.quickFoldersHotkeyId = kDefaultQuickFoldersHotkey,
+    this.bookmarkSyncEnabled = kDefaultBookmarkSyncEnabled,
+    this.bookmarkCustomDir = kDefaultBookmarkCustomDir,
     this.launchAtStartup = false,
   });
 
@@ -133,6 +137,13 @@ class AppSettings {
 
   /// Phase 16: opens the compact folder tree HUD without the main window.
   final String quickFoldersHotkeyId;
+
+  /// Phase 17: import new Chrome/Edge bookmarks into the sites list.
+  final bool bookmarkSyncEnabled;
+
+  /// Optional custom browser data directory (User Data dir, profile dir or a
+  /// `Bookmarks` file). Empty means "auto-detect Chrome and Edge".
+  final String bookmarkCustomDir;
   final bool launchAtStartup;
 
   AppSettings copyWith({
@@ -141,6 +152,8 @@ class AppSettings {
     String? globalHotkeyId,
     String? quickLinksHotkeyId,
     String? quickFoldersHotkeyId,
+    bool? bookmarkSyncEnabled,
+    String? bookmarkCustomDir,
     bool? launchAtStartup,
   }) {
     return AppSettings(
@@ -150,6 +163,8 @@ class AppSettings {
       quickLinksHotkeyId: quickLinksHotkeyId ?? this.quickLinksHotkeyId,
       quickFoldersHotkeyId:
           quickFoldersHotkeyId ?? this.quickFoldersHotkeyId,
+      bookmarkSyncEnabled: bookmarkSyncEnabled ?? this.bookmarkSyncEnabled,
+      bookmarkCustomDir: bookmarkCustomDir ?? this.bookmarkCustomDir,
       launchAtStartup: launchAtStartup ?? this.launchAtStartup,
     );
   }
@@ -160,6 +175,8 @@ class AppSettings {
         'globalHotkeyId': globalHotkeyId,
         'quickLinksHotkeyId': quickLinksHotkeyId,
         'quickFoldersHotkeyId': quickFoldersHotkeyId,
+        'bookmarkSyncEnabled': bookmarkSyncEnabled,
+        'bookmarkCustomDir': bookmarkCustomDir,
         'launchAtStartup': launchAtStartup,
       };
 
@@ -172,6 +189,10 @@ class AppSettings {
           json['quickLinksHotkeyId'] as String? ?? kDefaultQuickLinksHotkey,
       quickFoldersHotkeyId:
           json['quickFoldersHotkeyId'] as String? ?? kDefaultQuickFoldersHotkey,
+      bookmarkSyncEnabled: json['bookmarkSyncEnabled'] as bool? ??
+          kDefaultBookmarkSyncEnabled,
+      bookmarkCustomDir: json['bookmarkCustomDir'] as String? ??
+          kDefaultBookmarkCustomDir,
       launchAtStartup: json['launchAtStartup'] as bool? ?? false,
     );
   }
@@ -288,6 +309,95 @@ class FsListing {
           .toList(),
       total: json['total'] as int? ?? 0,
       truncated: json['truncated'] == true,
+    );
+  }
+}
+
+/// One browser profile whose bookmarks are watched (Phase 17).
+class BookmarkProfile {
+  const BookmarkProfile({
+    required this.label,
+    required this.path,
+    required this.bookmarks,
+  });
+
+  /// e.g. `Chrome · Default`, `Edge · Profile 1`, `自定义`.
+  final String label;
+  final String path;
+  final int bookmarks;
+
+  factory BookmarkProfile.fromJson(Map<String, dynamic> json) {
+    return BookmarkProfile(
+      label: json['label'] as String? ?? '',
+      path: json['path'] as String? ?? '',
+      bookmarks: (json['bookmarks'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// Result of `bookmarks.status`.
+class BookmarkStatus {
+  const BookmarkStatus({
+    this.enabled = true,
+    this.customDir = '',
+    this.profiles = const <BookmarkProfile>[],
+    this.lastSyncAt,
+    this.syncedUrls = 0,
+  });
+
+  final bool enabled;
+  final String customDir;
+  final List<BookmarkProfile> profiles;
+  final String? lastSyncAt;
+  final int syncedUrls;
+
+  int get totalBookmarks => profiles.fold<int>(
+        0,
+        (int sum, BookmarkProfile profile) => sum + profile.bookmarks,
+      );
+
+  factory BookmarkStatus.fromJson(Map<String, dynamic> json) {
+    return BookmarkStatus(
+      enabled: json['enabled'] as bool? ?? true,
+      customDir: json['customDir'] as String? ?? '',
+      profiles: (json['profiles'] as List<dynamic>? ?? <dynamic>[])
+          .map((dynamic e) => BookmarkProfile.fromJson(
+                e as Map<String, dynamic>,
+              ))
+          .toList(growable: false),
+      lastSyncAt: json['lastSyncAt'] as String?,
+      syncedUrls: (json['syncedUrls'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// Result of `bookmarks.sync`.
+class BookmarkSyncResult {
+  const BookmarkSyncResult({
+    this.added = 0,
+    this.skipped = 0,
+    this.total = 0,
+    this.profiles = const <BookmarkProfile>[],
+    this.lastSyncAt,
+  });
+
+  final int added;
+  final int skipped;
+  final int total;
+  final List<BookmarkProfile> profiles;
+  final String? lastSyncAt;
+
+  factory BookmarkSyncResult.fromJson(Map<String, dynamic> json) {
+    return BookmarkSyncResult(
+      added: (json['added'] as num?)?.toInt() ?? 0,
+      skipped: (json['skipped'] as num?)?.toInt() ?? 0,
+      total: (json['total'] as num?)?.toInt() ?? 0,
+      profiles: (json['profiles'] as List<dynamic>? ?? <dynamic>[])
+          .map((dynamic e) => BookmarkProfile.fromJson(
+                e as Map<String, dynamic>,
+              ))
+          .toList(growable: false),
+      lastSyncAt: json['lastSyncAt'] as String?,
     );
   }
 }

@@ -1,4 +1,4 @@
-"""End-to-end protocol test over real pipes.
+﻿"""End-to-end protocol test over real pipes.
 
 Runs ``backend/main.py`` as a separate process, exactly the way the Flutter client
 will, and verifies the two things unit tests cannot: the Windows stdio encoding
@@ -8,6 +8,7 @@ path (cp936 would mangle Chinese) and the LF-only framing.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -42,6 +43,7 @@ class SubprocessProtocolTests(unittest.TestCase):
                 input=script.encode("utf-8"),
                 capture_output=True,
                 timeout=60,
+                env={**os.environ, "RH_BROWSER_DATA_DIRS": ""},
             )
 
         self.assertEqual(proc.returncode, 0, proc.stderr.decode("utf-8", "replace"))
@@ -69,6 +71,7 @@ class SubprocessProtocolTests(unittest.TestCase):
                 input=b"",
                 capture_output=True,
                 timeout=60,
+                env={**os.environ, "RH_BROWSER_DATA_DIRS": ""},
             )
         self.assertEqual(proc.returncode, 0)
         self.assertEqual(proc.stdout, b"")

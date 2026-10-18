@@ -222,6 +222,18 @@ class BackendRepository implements ResourceApi {
     await client.call('fs.reveal', <String, dynamic>{'path': path});
   }
 
+  @override
+  Future<BookmarkSyncResult> syncBookmarks() async {
+    final Map<String, dynamic> result = await client.call('bookmarks.sync');
+    return BookmarkSyncResult.fromJson(result);
+  }
+
+  @override
+  Future<BookmarkStatus> loadBookmarkStatus() async {
+    final Map<String, dynamic> result = await client.call('bookmarks.status');
+    return BookmarkStatus.fromJson(result);
+  }
+
   Future<AppSettings> loadSettings() async {
     final Map<String, dynamic> result = await client.call('settings.get');
     return AppSettings.fromJson(result['settings'] as Map<String, dynamic>);

@@ -29,6 +29,8 @@ class Settings:
     quick_links_hotkey_id: str = DEFAULT_QUICK_LINKS_HOTKEY_ID
     quick_folders_hotkey_id: str = DEFAULT_QUICK_FOLDERS_HOTKEY_ID
     launch_at_startup: bool = False
+    bookmark_sync_enabled: bool = True
+    bookmark_custom_dir: str = ""
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -38,6 +40,8 @@ class Settings:
             "quickLinksHotkeyId": self.quick_links_hotkey_id,
             "quickFoldersHotkeyId": self.quick_folders_hotkey_id,
             "launchAtStartup": self.launch_at_startup,
+            "bookmarkSyncEnabled": self.bookmark_sync_enabled,
+            "bookmarkCustomDir": self.bookmark_custom_dir,
         }
 
     @classmethod
@@ -80,6 +84,16 @@ class Settings:
         startup = raw.get("launchAtStartup")
         if isinstance(startup, bool):
             settings = replace(settings, launch_at_startup=startup)
+
+        bookmark_enabled = raw.get("bookmarkSyncEnabled")
+        if isinstance(bookmark_enabled, bool):
+            settings = replace(settings, bookmark_sync_enabled=bookmark_enabled)
+
+        # No existence check: the directory is only read when a sync runs, and a
+        # hand-edited path that no longer exists must not break startup.
+        custom_dir = raw.get("bookmarkCustomDir")
+        if isinstance(custom_dir, str):
+            settings = replace(settings, bookmark_custom_dir=custom_dir.strip())
 
         return settings
 

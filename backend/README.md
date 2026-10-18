@@ -51,13 +51,40 @@ except ValidationError as exc:
   empty.
 - The previous contents are kept as `<name>.bak` before each write.
 
+## Browser bookmarks (Phase 17)
+
+The backend can import the local Chrome/Edge bookmarks into `sites.json` — no
+extension and no network. Browser files are only ever **read**; the imported
+links are appended at the end of the collection once and each URL is remembered
+in `.resourcehub-meta.json` so deleting a resource never resurrects it.
+
+```
+→ {"id":20,"method":"bookmarks.status","params":{}}
+← {"id":20,"ok":true,"result":{"enabled":true,"customDir":"",
+     "profiles":[{"label":"Chrome · Default","path":"C:\\...\\Bookmarks",
+                  "bookmarks":42}],"lastSyncAt":null,"syncedUrls":0}}
+→ {"id":21,"method":"bookmarks.sync","params":{}}
+← {"event":"bookmarks","payload":{"added":7,"lastSyncAt":"2026-04-22T13:53:49+08:00",
+     "profiles":[...]}}
+← {"id":21,"ok":true,"result":{"added":7,"skipped":35,"total":42,
+     "profiles":[...],"lastSyncAt":"2026-04-22T13:53:49+08:00"}}
+```
+
+Settings gained `bookmarkSyncEnabled` (default `true`) and `bookmarkCustomDir`
+(default `""`; accepts a `Bookmarks` file, a profile directory or a browser
+`User Data` directory). While the JSON Lines server runs, a daemon watcher polls
+the discovered files (mtime/size, 0.6 s debounce) and emits the same
+`bookmarks` event when it imports something. `RH_BROWSER_DATA_DIRS` (a
+`os.pathsep`-separated list of `User Data` roots) replaces the Windows default
+roots and is what the tests use, so they never read the real browser profile.
+
 ## Tests
 
 ```powershell
 D:\miniconda3\python.exe -m unittest discover -s tests -t .
 ```
 
-167 tests, no third-party packages required.
+226 tests, no third-party packages required.
 
 ## Protocol server
 

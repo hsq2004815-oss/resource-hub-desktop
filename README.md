@@ -12,6 +12,8 @@ websites, local folders and single files.
 - Import / export JSON backups (compatible with the legacy Python version)
 - Quick-panel hotkeys: `Ctrl + Alt + Shift + L` (sites tree) and `Ctrl + Alt + Shift + F`
   (folders tree) open a compact Spotlight-style tree instead of the full window
+- Browser bookmark sync: new Chrome / Edge bookmarks are imported automatically
+  (reads the local bookmark files, read-only; no extension needed)
 - Tray icon, global hotkey (`Ctrl + Alt + Space` by default), optional startup
 - Chinese / English UI, light / dark theme
 - Path health check, open, reveal in Explorer

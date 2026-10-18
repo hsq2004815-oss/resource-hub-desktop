@@ -85,6 +85,14 @@ abstract interface class ResourceApi {
   /// Reveals an arbitrary discovered folder/file in Explorer.
   Future<void> revealPath(String path);
 
+  /// Phase 17: imports new Chrome/Edge bookmarks into the sites collection.
+  ///
+  /// The backend only reads the browser files; this never modifies them.
+  Future<BookmarkSyncResult> syncBookmarks();
+
+  /// Watched browser profiles and the last bookmark sync state.
+  Future<BookmarkStatus> loadBookmarkStatus();
+
   /// Whether [hotkeyId] can be registered right now.
   Future<bool> probeHotkey(String hotkeyId);
 

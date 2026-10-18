@@ -49,6 +49,8 @@ void main() {
       executable: python,
       scriptPath: backendScript,
       baseDir: tempDir.path,
+      // Never import the developer's real Chrome/Edge bookmarks during tests.
+      environment: <String, String>{'RH_BROWSER_DATA_DIRS': ''},
     );
   });
 

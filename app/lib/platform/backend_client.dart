@@ -71,6 +71,7 @@ class BackendClient {
     String? scriptPath,
     required String baseDir,
     List<String> extraArgs = const <String>[],
+    Map<String, String> environment = const <String, String>{},
     Duration timeout = const Duration(seconds: 20),
   }) async {
     final Process process = await Process.start(
@@ -81,6 +82,9 @@ class BackendClient {
         ...extraArgs,
       ],
       workingDirectory: Directory.current.path,
+      // Tests use this to pin RH_BROWSER_DATA_DIRS so the startup bookmark
+      // import never reads the developer's real browser profiles.
+      environment: environment.isEmpty ? null : environment,
     );
     return BackendClient._(process, timeout);
   }

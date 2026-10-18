@@ -55,6 +55,7 @@ class ResourceListPanel extends StatelessWidget {
     required this.reorderEnabled,
     required this.onMoveItem,
     required this.onSortByAdded,
+    required this.onSyncBookmarks,
     required this.onOpenSettings,
     this.detailsPanel,
   });
@@ -97,6 +98,10 @@ class ResourceListPanel extends StatelessWidget {
 
   /// One-shot "sort by date added (newest first)" from the overflow menu.
   final VoidCallback onSortByAdded;
+
+  /// Phase 17: manually scan Chrome/Edge bookmarks now (also runs in the
+  /// background when the setting is enabled).
+  final VoidCallback onSyncBookmarks;
 
   /// Opens the settings dialog; lives in the toolbar since the in-content top
   /// bar was removed (the native Windows title bar already names the window).
@@ -292,6 +297,8 @@ class ResourceListPanel extends StatelessWidget {
                   switch (value) {
                     case 'sort_by_added':
                       onSortByAdded();
+                    case 'sync_bookmarks':
+                      onSyncBookmarks();
                     case 'export':
                       onExport();
                     case 'import':
@@ -307,6 +314,19 @@ class ResourceListPanel extends StatelessWidget {
                         const SizedBox(width: AppSpacing.md),
                         Text(
                           t.tx('sort_by_added'),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'sync_bookmarks',
+                    child: Row(
+                      children: <Widget>[
+                        const Icon(Icons.bookmark_add_outlined, size: 16),
+                        const SizedBox(width: AppSpacing.md),
+                        Text(
+                          t.tx('bookmark_sync_menu'),
                           style: const TextStyle(fontSize: 13),
                         ),
                       ],

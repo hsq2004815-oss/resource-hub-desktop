@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
 from unittest import mock
 
+from resource_hub_core.bookmarks import BROWSER_DATA_DIRS_ENV
 from resource_hub_core.protocol import PROTOCOL_VERSION, JsonLinesServer
 
 
@@ -17,8 +19,15 @@ class ProtocolTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self._tmp.name)
+        # Never let a test read the developer's real Chrome/Edge bookmarks:
+        # the server imports existing bookmarks on startup (Phase 17).
+        self._browser_env = mock.patch.dict(
+            os.environ, {BROWSER_DATA_DIRS_ENV: ""}
+        )
+        self._browser_env.start()
 
     def tearDown(self) -> None:
+        self._browser_env.stop()
         self._tmp.cleanup()
 
     def run_frames(self, requests: list[dict[str, Any]], *, load: bool = True) -> list[dict[str, Any]]:
@@ -59,6 +68,8 @@ class HelloTests(ProtocolTestCase):
         self.assertIn("resources.reorder", result["methods"])
         self.assertIn("fs.children", result["methods"])
         self.assertIn("hotkey.start", result["methods"])
+        self.assertIn("bookmarks.status", result["methods"])
+        self.assertIn("bookmarks.sync", result["methods"])
 
     def test_hello_on_corrupt_data(self) -> None:
         (self.dir / "sites.json").write_text("[broken", encoding="utf-8")
@@ -322,6 +333,253 @@ class SettingsTests(ProtocolTestCase):
 
     def test_probe_hotkey_rejects_invalid(self) -> None:
         self.assertFalse(self.call("settings.probeHotkey", {"hotkeyId": "Nope"})["result"]["available"])
+
+    def test_get_includes_bookmark_defaults(self) -> None:
+        settings = self.call("settings.get")["result"]["settings"]
+        self.assertIs(settings["bookmarkSyncEnabled"], True)
+        self.assertEqual(settings["bookmarkCustomDir"], "")
+
+    def test_set_normalises_bookmark_settings(self) -> None:
+        result = self.call(
+            "settings.set",
+            {
+                "settings": {
+                    "bookmarkSyncEnabled": False,
+                    "bookmarkCustomDir": "  D:\\Bookmarks  ",
+                }
+            },
+        )["result"]["settings"]
+        self.assertIs(result["bookmarkSyncEnabled"], False)
+        self.assertEqual(result["bookmarkCustomDir"], "D:\\Bookmarks")
+
+        persisted = json.loads((self.dir / "settings.json").read_text(encoding="utf-8"))
+        self.assertIs(persisted["bookmarkSyncEnabled"], False)
+        self.assertEqual(persisted["bookmarkCustomDir"], "D:\\Bookmarks")
+
+
+class BookmarkBridgeTests(ProtocolTestCase):
+    """Protocol surface of the browser bookmark bridge (Phase 17).
+
+    ``RH_BROWSER_DATA_DIRS`` is pinned so these tests never read the real
+    Chrome/Edge data of the machine running them.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self._env = mock.patch.dict(os.environ, {BROWSER_DATA_DIRS_ENV: ""})
+        self._env.start()
+
+    def tearDown(self) -> None:
+        self._env.stop()
+        super().tearDown()
+
+    @staticmethod
+    def _write_bookmarks(root: Path, payload: dict[str, Any]) -> None:
+        profile = root / "Default"
+        profile.mkdir(parents=True)
+        (profile / "Bookmarks").write_text(
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+        )
+
+    def test_status_on_an_empty_data_dir(self) -> None:
+        result = self.call("bookmarks.status")["result"]
+
+        self.assertEqual(
+            result,
+            {
+                "enabled": True,
+                "customDir": "",
+                "profiles": [],
+                "lastSyncAt": None,
+                "syncedUrls": 0,
+            },
+        )
+
+    def test_sync_imports_bookmarks_and_emits_event(self) -> None:
+        root = self.dir / "Chrome"
+        self._write_bookmarks(
+            root,
+            {
+                "roots": {
+                    "bookmark_bar": {
+                        "type": "folder",
+                        "name": "Bookmarks bar",
+                        "children": [
+                            {"type": "url", "name": "Home", "url": "https://home.example/"},
+                            {
+                                "type": "folder",
+                                "name": "开发",
+                                "children": [
+                                    {
+                                        "type": "url",
+                                        "name": "Python",
+                                        "url": "https://python.org/",
+                                    }
+                                ],
+                            },
+                        ],
+                    }
+                }
+            },
+        )
+        os.environ[BROWSER_DATA_DIRS_ENV] = str(root)
+
+        frames = self.run_frames(
+            [{"id": 1, "method": "bookmarks.sync", "params": {}}]
+        )
+
+        # The server imports existing bookmarks before serving the first
+        # request, so the explicit sync is already a no-op…
+        response = next(frame for frame in frames if frame.get("id") == 1)
+        self.assertTrue(response["ok"], response)
+        result = response["result"]
+        self.assertEqual(result["added"], 0)
+        self.assertEqual(result["skipped"], 2)
+        self.assertEqual(result["total"], 2)
+        self.assertIsInstance(result["lastSyncAt"], str)
+        self.assertEqual(
+            result["profiles"],
+            [
+                {
+                    "label": "Chrome · Default",
+                    "path": str(root / "Default" / "Bookmarks"),
+                    "bookmarks": 2,
+                }
+            ],
+        )
+
+        # …while the startup import itself announced the additions.
+        events = [frame for frame in frames if frame.get("event") == "bookmarks"]
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["payload"]["added"], 2)
+        self.assertEqual(
+            events[0]["payload"]["profiles"], result["profiles"]
+        )
+
+        stored = json.loads((self.dir / "sites.json").read_text(encoding="utf-8"))
+        by_name = {entry["name"]: entry for entry in stored}
+        self.assertEqual(len(stored), 4)  # two first-run samples + two imports
+        self.assertEqual(by_name["Home"]["category"], "书签栏")
+        self.assertEqual(by_name["Python"]["category"], "开发")
+
+    def test_sync_is_idempotent_through_the_protocol(self) -> None:
+        root = self.dir / "Chrome"
+        self._write_bookmarks(
+            root,
+            {
+                "roots": {
+                    "bookmark_bar": {
+                        "type": "folder",
+                        "name": "bar",
+                        "children": [
+                            {"type": "url", "name": "A", "url": "https://a.example/"}
+                        ],
+                    }
+                }
+            },
+        )
+        os.environ[BROWSER_DATA_DIRS_ENV] = str(root)
+
+        frames = self.run_frames(
+            [
+                {"id": 1, "method": "bookmarks.sync", "params": {}},
+                {"id": 2, "method": "bookmarks.sync", "params": {}},
+            ]
+        )
+
+        results = [
+            frame["result"] for frame in frames if frame.get("id") in (1, 2)
+        ]
+        self.assertEqual([result["added"] for result in results], [0, 0])
+        # Only the startup import is announced; no-op syncs stay silent.
+        events = [frame for frame in frames if frame.get("event") == "bookmarks"]
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["payload"]["added"], 1)
+
+    def test_custom_dir_set_through_settings_is_used_by_sync(self) -> None:
+        profile = self.dir / "custom-browser" / "Default"
+        profile.mkdir(parents=True)
+        (profile / "Bookmarks").write_text(
+            json.dumps(
+                {
+                    "roots": {
+                        "bookmark_bar": {
+                            "type": "folder",
+                            "name": "bar",
+                            "children": [
+                                {
+                                    "type": "url",
+                                    "name": "Custom",
+                                    "url": "https://custom.example/",
+                                }
+                            ],
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        frames = self.run_frames(
+            [
+                {
+                    "id": 1,
+                    "method": "settings.set",
+                    "params": {"settings": {"bookmarkCustomDir": str(profile)}},
+                },
+                {"id": 2, "method": "bookmarks.sync", "params": {}},
+                {"id": 3, "method": "bookmarks.status", "params": {}},
+            ]
+        )
+
+        by_id = {frame["id"]: frame for frame in frames if "id" in frame}
+        sync_result = by_id[2]["result"]
+        self.assertEqual(sync_result["added"], 1)
+        self.assertEqual(sync_result["profiles"][0]["label"], "自定义")
+        status = by_id[3]["result"]
+        self.assertEqual(status["customDir"], str(profile))
+        self.assertEqual(status["syncedUrls"], 1)
+        stored = json.loads((self.dir / "sites.json").read_text(encoding="utf-8"))
+        self.assertIn("Custom", [entry["name"] for entry in stored])
+
+    def test_sync_with_corrupt_data_file_fails_cleanly(self) -> None:
+        (self.dir / "sites.json").write_text("[broken", encoding="utf-8")
+        (self.dir / "folders.json").write_text("[]", encoding="utf-8")
+
+        frame = self.call("bookmarks.sync")
+
+        self.assertFalse(frame["ok"])
+        self.assertEqual(frame["error"]["code"], "corrupt_data")
+        self.assertEqual(frame["error"]["key"], "data_corrupt")
+
+    def test_serve_forever_starts_and_stops_the_watcher(self) -> None:
+        out = io.StringIO()
+        server = JsonLinesServer(
+            self.dir, in_stream=io.StringIO(""), out_stream=out
+        )
+        with (
+            mock.patch(
+                "resource_hub_core.protocol.BookmarkWatcher.start"
+            ) as start,
+            mock.patch("resource_hub_core.protocol.BookmarkWatcher.stop") as stop,
+        ):
+            server.serve_forever()
+
+        start.assert_called_once()
+        stop.assert_called_once()
+        self.assertIsNone(server.state.bookmark_watcher)
+
+    def test_watcher_is_not_started_on_corrupt_data(self) -> None:
+        (self.dir / "sites.json").write_text("[broken", encoding="utf-8")
+        (self.dir / "folders.json").write_text("[]", encoding="utf-8")
+        out = io.StringIO()
+        server = JsonLinesServer(
+            self.dir, in_stream=io.StringIO(""), out_stream=out
+        )
+        with mock.patch("resource_hub_core.protocol.BookmarkWatcher.start") as start:
+            server.serve_forever()
+
+        start.assert_not_called()
 
 
 class ErrorMappingTests(ProtocolTestCase):

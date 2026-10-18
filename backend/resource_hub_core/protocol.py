@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, IO, Mapping
 
+from .bookmarks import BookmarkSyncEngine, BookmarkWatcher
 from .fs import list_children, open_fs_path, reveal_fs_path
 from .hotkey import GlobalHotkeyListener, is_combination_available
 from .launcher import open_link, open_path, reveal_path
@@ -89,6 +90,15 @@ class ProtocolError(Exception):
         return payload
 
 
+def bookmark_event_payload(result: Mapping[str, Any]) -> dict[str, Any]:
+    """The ``bookmarks`` event payload a client needs to refresh its view."""
+    return {
+        "added": result["added"],
+        "lastSyncAt": result["lastSyncAt"],
+        "profiles": list(result["profiles"]),
+    }
+
+
 class FrameWriter:
     """Serialises frame writes across threads."""
 
@@ -120,7 +130,12 @@ class ServerState:
     service: ResourceService
     settings_store: SettingsStore
     settings: Settings
+    bookmark_engine: BookmarkSyncEngine
     load_error: str | None = None
+    #: Serialises every protocol handler with the bookmark watcher's sync, so a
+    #: background import can never interleave with a user-triggered write.
+    bookmark_lock: threading.RLock = field(default_factory=threading.RLock)
+    bookmark_watcher: BookmarkWatcher | None = None
     hotkey: list[GlobalHotkeyListener] = field(default_factory=list)
 
 
@@ -133,6 +148,8 @@ class Dispatcher:
         self._handlers: dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]] = {
             "app.hello": self._hello,
             "app.shutdown": self._shutdown,
+            "bookmarks.status": self._bookmarks_status,
+            "bookmarks.sync": self._bookmarks_sync,
             "resources.list": self._list,
             "resources.add": self._add,
             "resources.update": self._update,
@@ -160,10 +177,13 @@ class Dispatcher:
         return tuple(sorted(self._handlers))
 
     def dispatch(self, method: str, params: Mapping[str, Any]) -> dict[str, Any]:
-        handler = self._handlers.get(method)
-        if handler is None:
-            raise ProtocolError("unknown_method", f"no method named {method!r}")
-        return handler(params)
+        # Held for the whole handler: the bookmark watcher takes the same lock
+        # around its background sync, so the two can never interleave writes.
+        with self.state.bookmark_lock:
+            handler = self._handlers.get(method)
+            if handler is None:
+                raise ProtocolError("unknown_method", f"no method named {method!r}")
+            return handler(params)
 
     # -- helpers -----------------------------------------------------------
     @staticmethod
@@ -202,7 +222,24 @@ class Dispatcher:
 
     def _shutdown(self, params: Mapping[str, Any]) -> dict[str, Any]:
         self.stop_hotkey()
+        self.stop_bookmarks()
         return {"shutdown": True}
+
+    # -- bookmarks ---------------------------------------------------------
+    def _bookmarks_status(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        return self.state.bookmark_engine.status(self.state.settings)
+
+    def _bookmarks_sync(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        self._require_loaded()
+        with self.state.bookmark_lock:
+            result = self.state.bookmark_engine.sync(
+                self.state.service, self.state.settings
+            )
+        if result["added"] > 0:
+            # The response already carries the result; the event keeps every
+            # open window consistent, including one that did not send the call.
+            self.writer.event("bookmarks", bookmark_event_payload(result))
+        return result
 
     # -- resources ---------------------------------------------------------
     def _list(self, params: Mapping[str, Any]) -> dict[str, Any]:
@@ -438,6 +475,13 @@ class Dispatcher:
             listener.stop()
         self.state.hotkey.clear()
 
+    def stop_bookmarks(self) -> None:
+        """Stop the watcher thread (safe to call more than once)."""
+        watcher = self.state.bookmark_watcher
+        self.state.bookmark_watcher = None
+        if watcher is not None:
+            watcher.stop()
+
 
 class JsonLinesServer:
     """Reads requests from ``in_stream``, writes frames to ``out_stream``."""
@@ -468,6 +512,7 @@ class JsonLinesServer:
             service=service,
             settings_store=SettingsStore(self.base_dir / "settings.json"),
             settings=Settings(),
+            bookmark_engine=BookmarkSyncEngine(self.base_dir),
             load_error=load_error,
         )
         if load_error is None:
@@ -476,15 +521,53 @@ class JsonLinesServer:
 
     # -- loop --------------------------------------------------------------
     def serve_forever(self) -> int:
-        for raw_line in self._in:
-            line = raw_line.strip()
-            if not line:
-                continue
-            self._handle_line(line)
-            if self._stop_requested:
-                break
-        self._shutdown()
+        self._start_bookmarks()
+        try:
+            for raw_line in self._in:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                self._handle_line(line)
+                if self._stop_requested:
+                    break
+        finally:
+            # Reached both after app.shutdown and on stdin EOF.
+            self._shutdown()
         return 0
+
+    def _start_bookmarks(self) -> None:
+        """Import existing bookmarks once, then watch the files for changes."""
+        state = self.state
+        if state.load_error is not None or state.bookmark_watcher is not None:
+            return
+        # First-run / every-start reconciliation happens before the first
+        # request is served, so the very first `resources.list` already contains
+        # the imported bookmarks (and bookmarks added while the app was closed).
+        # Failures are non-fatal: a missing/odd browser profile must not stop the
+        # backend from starting.
+        if state.settings.bookmark_sync_enabled:
+            try:
+                with state.bookmark_lock:
+                    imported = state.bookmark_engine.sync(
+                        state.service, state.settings
+                    )
+                if imported["added"] > 0:
+                    self.writer.event(
+                        "bookmarks", bookmark_event_payload(imported)
+                    )
+            except Exception:  # noqa: BLE001 - best-effort startup import
+                pass
+        watcher = BookmarkWatcher(
+            state.bookmark_engine,
+            state.service,
+            lambda: state.settings,
+            lambda result: self.writer.event(
+                "bookmarks", bookmark_event_payload(result)
+            ),
+            lock=state.bookmark_lock,
+        )
+        state.bookmark_watcher = watcher
+        watcher.start()
 
     def _handle_line(self, line: str) -> bool:
         try:
@@ -550,6 +633,7 @@ class JsonLinesServer:
 
     def _shutdown(self) -> None:
         self.dispatcher.stop_hotkey()
+        self.dispatcher.stop_bookmarks()
 
     @staticmethod
     def _log_internal(method: str, exc: BaseException) -> None:

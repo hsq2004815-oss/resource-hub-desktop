@@ -352,6 +352,61 @@ class FakeApi implements ResourceApi {
 
   @override
   Future<void> stopHotkey() async {}
+
+  // -- Phase 17: browser bookmark sync -----------------------------------
+  BookmarkStatus bookmarkStatus = const BookmarkStatus(
+    profiles: <BookmarkProfile>[
+      BookmarkProfile(
+        label: 'Chrome · Default',
+        path: r'C:\Chrome\User Data\Default',
+        bookmarks: 3,
+      ),
+    ],
+    lastSyncAt: '2026-10-18T07:00:00+08:00',
+    syncedUrls: 3,
+  );
+  int syncBookmarkCalls = 0;
+  int bookmarkAddedOnSync = 1;
+
+  @override
+  Future<BookmarkSyncResult> syncBookmarks() async {
+    syncBookmarkCalls += 1;
+    if (bookmarkAddedOnSync > 0) {
+      _links.add(
+        ResourceItem(
+          id: 'synced-$syncBookmarkCalls',
+          name: 'Synced Site $syncBookmarkCalls',
+          path: 'https://synced$syncBookmarkCalls.example',
+          kind: ResourceKind.link,
+          category: '书签栏',
+        ),
+      );
+    }
+    return BookmarkSyncResult(
+      added: bookmarkAddedOnSync,
+      skipped: 0,
+      total: bookmarkAddedOnSync,
+      profiles: bookmarkStatus.profiles,
+      lastSyncAt: bookmarkStatus.lastSyncAt,
+    );
+  }
+
+  @override
+  Future<BookmarkStatus> loadBookmarkStatus() async => bookmarkStatus;
+
+  /// Adds a link as if a bookmark had been imported, for event tests.
+  void addBookmarkLink(ResourceItem item) => _links.add(item);
+
+  /// Simulates the backend's background "bookmarks" event.
+  void emitBookmarkEvent(int added) {
+    _events.add(
+      BackendEvent('bookmarks', <String, dynamic>{
+        'added': added,
+        'lastSyncAt': '2026-10-18T07:10:00+08:00',
+        'profiles': <dynamic>[],
+      }),
+    );
+  }
 }
 
 /// Fake that always refuses a save with a duplicate error, so the status-bar
@@ -1404,6 +1459,60 @@ void main() {
     await tester.tapAt(const Offset(800, 900));
     await tester.pumpAndSettle();
     expect(find.byTooltip('新增资源'), findsOneWidget);
+  });
+
+  testWidgets('overflow menu syncs browser bookmarks and reports the result',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('同步浏览器书签'));
+    await tester.pumpAndSettle();
+
+    expect(api.syncBookmarkCalls, 1);
+    expect(find.textContaining('同步完成'), findsOneWidget);
+  });
+
+  testWidgets('a background bookmark event refreshes the sites list',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    api.addBookmarkLink(
+      const ResourceItem(
+        id: 'event-1',
+        name: 'Bookmarked Site',
+        path: 'https://bookmarked.example',
+        kind: ResourceKind.link,
+        category: '书签栏',
+      ),
+    );
+
+    api.emitBookmarkEvent(1);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('已从浏览器同步'), findsOneWidget);
+
+    await tester.tap(find.text('网站'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bookmarked Site'), findsOneWidget);
+  });
+
+  testWidgets('settings exposes bookmark sync and persists the switch',
+      (WidgetTester tester) async {
+    final List<AppSettings> saved = <AppSettings>[];
+    await pumpApp(
+      tester,
+      onSettingsChanged: (AppSettings settings) async => saved.add(settings),
+    );
+    await openSettings(tester);
+    expect(find.text('浏览器书签同步'), findsOneWidget);
+    expect(find.textContaining('已检测到 1 个浏览器配置'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey<String>('bookmark-sync-switch')));
+    await tester.pumpAndSettle();
+    expect(saved, isNotEmpty);
+    expect(saved.last.bookmarkSyncEnabled, isFalse);
   });
 
   test('translation table keeps zh/en key parity', () {

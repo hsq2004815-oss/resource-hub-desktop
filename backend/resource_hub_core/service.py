@@ -339,6 +339,47 @@ class ResourceService:
         self._save(mode)
         return item
 
+    def add_synced(
+        self, mode: str, entries: Sequence[tuple[str, str, str | None]]
+    ) -> list[Resource]:
+        """Append a batch imported from a browser profile.
+
+        ``entries`` are ``(name, target, category)`` tuples. Validation and
+        de-duplication are identical to :meth:`add`, but a bad entry is skipped
+        instead of raising: browser data is not user input, so one unparseable
+        bookmark must not abort the whole import. Unlike :meth:`add`, accepted
+        entries go to the **end** of the collection — a sync must not push the
+        user's own rows down — and the JSON file is written once per batch.
+
+        Returns the created resources in input order.
+        """
+        self._require_loaded()
+        created: list[Resource] = []
+        for raw_name, raw_target, raw_category in entries:
+            clean_name = str(raw_name).strip()
+            clean_target = str(raw_target).strip()
+            try:
+                normalized_target, kind = self._validate(mode, clean_name, clean_target)
+            except ValidationError:
+                continue
+            # `_find_duplicate` already sees the batch: entries appended above
+            # are part of the collection, so in-batch duplicates are skipped too.
+            if self._find_duplicate(mode, normalized_target) is not None:
+                continue
+            item = self._build(
+                mode,
+                name=clean_name,
+                target=normalized_target,
+                kind=kind,
+                category=normalize_category(raw_category),
+                note="",
+            )
+            self._items[mode].append(item)
+            created.append(item)
+        if created:
+            self._save(mode)
+        return created
+
     def update(
         self,
         mode: str,

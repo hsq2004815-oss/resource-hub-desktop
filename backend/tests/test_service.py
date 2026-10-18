@@ -167,6 +167,77 @@ class AddLinkTests(ServiceTestCase):
         self.assertEqual(item.note, "hi")
 
 
+class SyncedAddTests(ServiceTestCase):
+    """Batch import used by the browser bookmark bridge (Phase 17)."""
+
+    def test_appends_at_the_end_and_returns_created(self) -> None:
+        created = self.service.add_synced(
+            "links",
+            [
+                ("Home", "https://home.example/", "书签栏"),
+                ("Docs", "https://docs.example/", None),
+            ],
+        )
+
+        self.assertEqual([item.name for item in created], ["Home", "Docs"])
+        self.assertEqual(
+            [item.name for item in self.service.items("links")],
+            ["OpenAI", "GitHub", "Home", "Docs"],
+        )
+        self.assertEqual(created[0].category, "书签栏")
+        self.assertEqual(created[1].category, UNCATEGORIZED)
+
+    def test_skips_invalid_and_duplicate_entries(self) -> None:
+        created = self.service.add_synced(
+            "links",
+            [
+                ("", "https://nameless.example/", None),
+                ("FTP", "ftp://files.example/", None),
+                ("GitHub", "https://github.com/", None),  # seeded sample
+                ("First", "https://same.example/", None),
+                ("Second", "https://SAME.example", None),  # in-batch duplicate
+                ("Ok", "https://ok.example/", "工作"),
+            ],
+        )
+
+        self.assertEqual([item.name for item in created], ["First", "Ok"])
+        self.assertEqual(created[0].url, "https://same.example/")
+        self.assertEqual(created[1].category, "工作")
+
+    def test_writes_the_file_once_per_batch(self) -> None:
+        with mock.patch("resource_hub_core.service.JsonFileStore.save") as saver:
+            self.service.add_synced(
+                "links",
+                [
+                    ("A", "https://a.example/", None),
+                    ("B", "https://b.example/", None),
+                ],
+            )
+
+        self.assertEqual(saver.call_count, 1)
+        payload = saver.call_args.args[0]
+        self.assertEqual([entry["name"] for entry in payload[-2:]], ["A", "B"])
+
+    def test_no_write_when_nothing_was_accepted(self) -> None:
+        with mock.patch("resource_hub_core.service.JsonFileStore.save") as saver:
+            created = self.service.add_synced(
+                "links", [("FTP", "ftp://files.example/", None)]
+            )
+
+        self.assertEqual(created, [])
+        saver.assert_not_called()
+
+    def test_folders_mode_is_supported_too(self) -> None:
+        target = self.make_dir("synced-folder")
+
+        created = self.service.add_synced(
+            "folders", [("Synced", str(target), None)]
+        )
+
+        self.assertEqual([item.name for item in created], ["Synced"])
+        self.assertEqual(self.service.items("folders")[-1].name, "Synced")
+
+
 class AddFolderTests(ServiceTestCase):
     def test_existing_directory(self) -> None:
         target = self.make_dir()

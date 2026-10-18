@@ -146,6 +146,10 @@ class _HomePageState extends State<HomePage> {
   bool _quickReturnVisible = false;
   StreamSubscription<void>? _quickDismissSubscription;
 
+  /// Phase 17: suppress the automatic "imported N sites" status while a manual
+  /// sync is already reporting its own result.
+  bool _bookmarkSyncInFlight = false;
+
   ResourceApi get _repo => widget.api;
   bool get _dataCorrupt => widget.dataCorrupt;
 
@@ -194,6 +198,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _onBackendEvent(BackendEvent event) async {
+    if (event.name == 'bookmarks') {
+      await _handleBookmarkEvent(event.payload);
+      return;
+    }
     if (event.name != 'hotkey') {
       return;
     }
@@ -206,6 +214,90 @@ class _HomePageState extends State<HomePage> {
         await _toggleMainWindow();
     }
   }
+
+  // -- browser bookmark sync (Phase 17) -----------------------------------
+  Future<void> _handleBookmarkEvent(Map<String, dynamic> payload) async {
+    final int added = (payload['added'] as num?)?.toInt() ?? 0;
+    await _reload(ViewMode.links);
+    if (!mounted || added <= 0 || _bookmarkSyncInFlight) {
+      return;
+    }
+    _setStatus(
+      _Status(
+        key: 'bookmark_sync_auto',
+        args: <Object?>[added],
+        tone: StatusTone.success,
+      ),
+    );
+  }
+
+  Future<void> _syncBookmarks() async {
+    if (_bookmarkSyncInFlight) {
+      return;
+    }
+    if (_dataCorrupt) {
+      _setStatus(_Status(key: 'data_corrupt'));
+      return;
+    }
+    _bookmarkSyncInFlight = true;
+    _setStatus(_Status(key: 'bookmark_sync_running'));
+    try {
+      final BookmarkSyncResult result = await _repo.syncBookmarks();
+      await _reload(ViewMode.links);
+      if (!mounted) {
+        return;
+      }
+      if (result.profiles.isEmpty) {
+        _setStatus(
+          _Status(key: 'bookmark_sync_no_browsers', tone: StatusTone.warning),
+        );
+        return;
+      }
+      _setStatus(
+        _Status(
+          key: 'bookmark_sync_done',
+          args: <Object?>[result.added, result.skipped],
+          tone: result.added > 0 ? StatusTone.success : StatusTone.info,
+        ),
+      );
+    } on BackendException catch (error) {
+      _setStatus(_Status.fromError(error));
+    } catch (_) {
+      _setStatus(_Status(key: 'bookmark_sync_failed', tone: StatusTone.error));
+    } finally {
+      _bookmarkSyncInFlight = false;
+    }
+  }
+
+  /// Settings-dialog variant: returns the result for inline feedback instead of
+  /// also writing the status bar.
+  Future<BookmarkSyncResult?> _syncBookmarksForDialog() async {
+    if (_dataCorrupt) {
+      _setStatus(_Status(key: 'data_corrupt'));
+      return null;
+    }
+    try {
+      final BookmarkSyncResult result = await _repo.syncBookmarks();
+      await _reload(ViewMode.links);
+      return result;
+    } on BackendException catch (error) {
+      _setStatus(_Status.fromError(error));
+      return null;
+    } catch (_) {
+      _setStatus(_Status(key: 'bookmark_sync_failed', tone: StatusTone.error));
+      return null;
+    }
+  }
+
+  Future<BookmarkStatus?> _loadBookmarkStatus() async {
+    try {
+      return await _repo.loadBookmarkStatus();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> _pickBookmarkDir() => NativeShell.pickFolder();
 
   /// Ctrl+Alt+Space. While the quick panel is up it expands to the full window
   /// instead of toggling the window off.
@@ -1195,6 +1287,9 @@ class _HomePageState extends State<HomePage> {
         onSettingsChanged: widget.onSettingsChanged,
         onProbeHotkey: _probeHotkey,
         onHotkeyRecordingChanged: _setHotkeyRecording,
+        onLoadBookmarkStatus: _loadBookmarkStatus,
+        onSyncBookmarks: _syncBookmarksForDialog,
+        onPickBookmarkDir: _pickBookmarkDir,
       ),
     );
   }
@@ -1363,7 +1458,8 @@ class _HomePageState extends State<HomePage> {
                     onMoveItem: (ResourceItem item, int targetIndex) =>
                         unawaited(_handleMoveItem(item, targetIndex)),
                     onSortByAdded: () => unawaited(_sortByAdded()),
-                        onOpenSettings: _openSettings,
+                    onSyncBookmarks: () => unawaited(_syncBookmarks()),
+                    onOpenSettings: _openSettings,
                       );
                     },
                   ),

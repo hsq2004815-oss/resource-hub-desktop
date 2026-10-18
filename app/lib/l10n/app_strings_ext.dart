@@ -1,4 +1,4 @@
-/// Strings that only the Flutter UI needs.
+﻿/// Strings that only the Flutter UI needs.
 ///
 /// `strings.g.dart` is generated from the legacy Python `STRINGS` dict and must
 /// stay a faithful copy — editing `resource_hub.pyw` is out of scope for the
@@ -79,6 +79,28 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
     'quick_loading': '正在读取…',
     'quick_folder_open_hint': '单击打开资源管理器，箭头展开子项',
     'quick_full_window': '打开完整窗口：{0}',
+    'bookmark_sync_menu': '同步浏览器书签',
+    'bookmark_sync_running': '正在同步浏览器书签…',
+    'bookmark_sync_auto': '已从浏览器同步 {0} 个新网站',
+    'bookmark_sync_done': '同步完成：新增 {0} 个，跳过 {1} 个',
+    'bookmark_sync_no_browsers': '未找到 Chrome / Edge 的书签文件',
+    'bookmark_sync_failed': '浏览器书签同步失败。',
+    'settings_bookmarks_title': '浏览器书签同步',
+    'settings_bookmarks_hint': '只读 Chrome / Edge 本地书签，浏览器里收藏新网站后会自动加入这里；'
+        '不会修改浏览器。',
+    'settings_bookmarks_enabled': '启用书签同步',
+    'settings_bookmarks_dir': '自定义书签目录',
+    'settings_bookmarks_dir_auto': '自动检测',
+    'settings_bookmarks_pick': '选择目录',
+    'settings_bookmarks_clear': '清除',
+    'settings_bookmarks_detected': '已检测到 {0} 个浏览器配置（{1} 个书签）',
+    'settings_bookmarks_loading': '正在检测浏览器书签…',
+    'settings_bookmarks_none': '暂未检测到 Chrome / Edge 书签',
+    'settings_bookmarks_last_sync': '上次同步：{0}',
+    'settings_bookmarks_never': '尚未同步',
+    'settings_bookmarks_sync_now': '立即同步',
+    'settings_bookmarks_syncing': '正在同步…',
+    'settings_bookmarks_result': '新增 {0} 个，跳过 {1} 个',
   },
   'en': <String, String>{
     'settings_theme': 'Appearance',
@@ -152,6 +174,28 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
     'quick_folder_open_hint':
         'Click to open in Explorer; use the arrow to expand',
     'quick_full_window': 'Open the full window: {0}',
+    'bookmark_sync_menu': 'Sync browser bookmarks',
+    'bookmark_sync_running': 'Syncing browser bookmarks…',
+    'bookmark_sync_auto': 'Imported {0} new site(s) from the browser',
+    'bookmark_sync_done': 'Sync finished: {0} added, {1} skipped',
+    'bookmark_sync_no_browsers': 'No Chrome / Edge bookmark file found',
+    'bookmark_sync_failed': 'Browser bookmark sync failed.',
+    'settings_bookmarks_title': 'Browser bookmark sync',
+    'settings_bookmarks_hint':
+        'Reads local Chrome / Edge bookmarks (read-only); new bookmarks are added here automatically. The browser is never modified.',
+    'settings_bookmarks_enabled': 'Enable bookmark sync',
+    'settings_bookmarks_dir': 'Custom bookmark directory',
+    'settings_bookmarks_dir_auto': 'Auto-detect',
+    'settings_bookmarks_pick': 'Choose directory',
+    'settings_bookmarks_clear': 'Clear',
+    'settings_bookmarks_detected': '{0} browser profile(s) detected ({1} bookmarks)',
+    'settings_bookmarks_loading': 'Detecting browser bookmarks…',
+    'settings_bookmarks_none': 'No Chrome / Edge bookmarks detected yet',
+    'settings_bookmarks_last_sync': 'Last sync: {0}',
+    'settings_bookmarks_never': 'never',
+    'settings_bookmarks_sync_now': 'Sync now',
+    'settings_bookmarks_syncing': 'Syncing…',
+    'settings_bookmarks_result': '{0} added, {1} skipped',
   },
 };
 

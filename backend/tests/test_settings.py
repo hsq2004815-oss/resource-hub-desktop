@@ -41,6 +41,31 @@ class SettingsNormalizeTests(unittest.TestCase):
                 )
                 self.assertTrue(settings.global_hotkey_enabled)
                 self.assertFalse(settings.launch_at_startup)
+                self.assertTrue(settings.bookmark_sync_enabled)
+                self.assertEqual(settings.bookmark_custom_dir, "")
+
+    def test_bookmark_defaults(self) -> None:
+        settings = Settings()
+        self.assertTrue(settings.bookmark_sync_enabled)
+        self.assertEqual(settings.bookmark_custom_dir, "")
+
+    def test_bookmark_settings_are_normalised(self) -> None:
+        settings = Settings.normalize(
+            {"bookmarkSyncEnabled": False, "bookmarkCustomDir": "  D:\\Bookmarks  "}
+        )
+        self.assertFalse(settings.bookmark_sync_enabled)
+        self.assertEqual(settings.bookmark_custom_dir, "D:\\Bookmarks")
+
+    def test_blank_bookmark_custom_dir_is_allowed(self) -> None:
+        settings = Settings.normalize({"bookmarkCustomDir": "   "})
+        self.assertEqual(settings.bookmark_custom_dir, "")
+
+    def test_non_bool_and_non_str_bookmark_values_are_ignored(self) -> None:
+        settings = Settings.normalize(
+            {"bookmarkSyncEnabled": "yes", "bookmarkCustomDir": 42}
+        )
+        self.assertTrue(settings.bookmark_sync_enabled)
+        self.assertEqual(settings.bookmark_custom_dir, "")
 
     def test_invalid_language_falls_back(self) -> None:
         self.assertEqual(Settings.normalize({"language": "fr"}).language, DEFAULT_LANGUAGE)
@@ -94,6 +119,17 @@ class SettingsNormalizeTests(unittest.TestCase):
         )
         self.assertEqual(Settings.normalize(payload), Settings())
 
+    def test_to_json_includes_bookmark_keys(self) -> None:
+        payload = Settings(
+            bookmark_sync_enabled=False, bookmark_custom_dir="D:\\Bookmarks"
+        ).to_json()
+        self.assertIs(payload["bookmarkSyncEnabled"], False)
+        self.assertEqual(payload["bookmarkCustomDir"], "D:\\Bookmarks")
+        self.assertEqual(
+            Settings.normalize(payload),
+            Settings(bookmark_sync_enabled=False, bookmark_custom_dir="D:\\Bookmarks"),
+        )
+
     def test_non_bool_flags_are_ignored(self) -> None:
         settings = Settings.normalize(
             {"globalHotkeyEnabled": "yes", "launchAtStartup": 1}
@@ -144,6 +180,8 @@ class SettingsStoreTests(unittest.TestCase):
                 quick_links_hotkey_id="Ctrl + Shift + L",
                 quick_folders_hotkey_id="Ctrl + Shift + F",
                 launch_at_startup=True,
+                bookmark_sync_enabled=False,
+                bookmark_custom_dir="D:\\Bookmarks",
             )
             store.save(original)
             self.assertEqual(store.load(), original)
