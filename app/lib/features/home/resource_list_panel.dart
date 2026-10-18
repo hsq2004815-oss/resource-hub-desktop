@@ -275,8 +275,6 @@ class ResourceListPanel extends StatelessWidget {
                 onCheckPaths: onCheckPaths,
                 onEdit: _hasSelection ? onEditSelected : null,
                 onDelete: _hasSelection ? onDeleteSelected : null,
-                onImport: onImport,
-                onExport: onExport,
               ),
               const SizedBox(width: AppSpacing.xs),
               PopupMenuButton<String>(
@@ -285,8 +283,13 @@ class ResourceListPanel extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 splashRadius: 18,
                 onSelected: (String value) {
-                  if (value == 'sort_by_added') {
-                    onSortByAdded();
+                  switch (value) {
+                    case 'sort_by_added':
+                      onSortByAdded();
+                    case 'export':
+                      onExport();
+                    case 'import':
+                      onImport();
                   }
                 },
                 itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
@@ -298,6 +301,33 @@ class ResourceListPanel extends StatelessWidget {
                         const SizedBox(width: AppSpacing.md),
                         Text(
                           t.tx('sort_by_added'),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  PopupMenuItem<String>(
+                    value: 'export',
+                    child: Row(
+                      children: <Widget>[
+                        const Icon(Icons.file_download_outlined, size: 16),
+                        const SizedBox(width: AppSpacing.md),
+                        Text(
+                          t.t('export'),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'import',
+                    child: Row(
+                      children: <Widget>[
+                        const Icon(Icons.file_upload_outlined, size: 16),
+                        const SizedBox(width: AppSpacing.md),
+                        Text(
+                          t.t('import'),
                           style: const TextStyle(fontSize: 13),
                         ),
                       ],
@@ -388,8 +418,6 @@ class _Toolbar extends StatelessWidget {
     required this.onCheckPaths,
     required this.onEdit,
     required this.onDelete,
-    required this.onImport,
-    required this.onExport,
   });
 
   final AppStrings t;
@@ -399,8 +427,6 @@ class _Toolbar extends StatelessWidget {
   final VoidCallback onCheckPaths;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
-  final VoidCallback onImport;
-  final VoidCallback onExport;
 
   @override
   Widget build(BuildContext context) {
@@ -422,16 +448,6 @@ class _Toolbar extends StatelessWidget {
           icon: Icons.health_and_safety_outlined,
           tooltip: t.t('check_paths'),
           onPressed: onCheckPaths,
-        ),
-        ToolbarButton(
-          icon: Icons.file_download_outlined,
-          tooltip: t.t('export'),
-          onPressed: onExport,
-        ),
-        ToolbarButton(
-          icon: Icons.file_upload_outlined,
-          tooltip: t.t('import'),
-          onPressed: onImport,
         ),
         ToolbarButton(
           icon: Icons.edit_outlined,

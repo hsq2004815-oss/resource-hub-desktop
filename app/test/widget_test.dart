@@ -725,12 +725,18 @@ void main() {
     expect(AppTheme.light.colorScheme.primary, const Color(0xFF2F6FED));
   });
 
-  testWidgets('list toolbar exposes import and export entries',
+  testWidgets('backup export/import live in the overflow menu',
       (WidgetTester tester) async {
     await pumpApp(tester);
 
-    expect(find.byTooltip('导出'), findsOneWidget);
-    expect(find.byTooltip('导入'), findsOneWidget);
+    // The two standalone toolbar buttons were removed as visual clutter.
+    expect(find.byTooltip('导出'), findsNothing);
+    expect(find.byTooltip('导入'), findsNothing);
+
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    expect(find.text('导出'), findsOneWidget);
+    expect(find.text('导入'), findsOneWidget);
   });
 
   testWidgets('dropped paths are added through the api',
