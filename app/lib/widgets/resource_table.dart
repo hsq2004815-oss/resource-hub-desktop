@@ -207,17 +207,12 @@ class ResourceTable extends StatelessWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final List<_Column> columns = _columns(context);
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLowest,
-        borderRadius: AppRadius.mdAll,
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: ClipRRect(
-        borderRadius: AppRadius.mdAll,
-        child: Column(
-          children: <Widget>[
-            _TableHeader(columns: columns),
+    // No enclosing card: like the grid view, the list sits directly on the
+    // page surface and only rows/selection paint a fill. Hierarchy comes from
+    // the header hairline and row dividers.
+    return Column(
+      children: <Widget>[
+        _TableHeader(columns: columns),
             Expanded(
               child: items.isEmpty
                   ? (emptyState ?? const SizedBox.shrink())
@@ -275,8 +270,6 @@ class ResourceTable extends StatelessWidget {
                     ),
             ),
           ],
-        ),
-      ),
     );
   }
 }
@@ -293,7 +286,8 @@ class _TableHeader extends StatelessWidget {
     return Container(
       height: AppSizes.tableHeaderHeight,
       decoration: BoxDecoration(
-        color: scheme.surfaceContainer,
+        // Same page surface as the grid view; only the divider marks the header.
+        color: scheme.surface,
         border: Border(bottom: BorderSide(color: scheme.outlineVariant)),
       ),
       child: Row(

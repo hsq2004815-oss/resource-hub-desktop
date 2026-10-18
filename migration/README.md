@@ -18,6 +18,7 @@
 | [`phase10-no-top-bar.md`](phase10-no-top-bar.md) | 删除内容区 56px 顶部栏，设置入口移到工作区工具栏 |
 | [`phase11-toolbar-cleanup.md`](phase11-toolbar-cleanup.md) | 工具栏精简：导出/导入移入「更多」菜单 |
 | [`phase12-controls-polish.md`](phase12-controls-polish.md) | 新增资源按钮按 M3 重做、分类筛选收窄 |
+| [`phase13-list-surface.md`](phase13-list-surface.md) | 列表视图去掉白色面板，使用网格视图同款页面底色 |
 | [`adr/ADR-001-tray-hotkey-ownership.md`](adr/ADR-001-tray-hotkey-ownership.md) | 托盘/热键归属、导入导出入口、数据覆盖风险 |
 | [`adr/ADR-002-native-shell-ownership.md`](adr/ADR-002-native-shell-ownership.md) | Windows 壳层归属（runner vs 后端） |
 
