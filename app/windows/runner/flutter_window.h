@@ -64,6 +64,15 @@ class FlutterWindow : public Win32Window {
   // second instance, Alt+F4). Dart calls exitQuickMode() and restores its UI.
   void NotifyQuickDismissed();
 
+  // While the HUD is up, watch the system foreground window. Some activation
+  // hand-offs never deliver WM_ACTIVATE(WA_INACTIVE) to us (the panel was forced
+  // to the foreground through AttachThreadInput), so a 100 ms timer is the
+  // reliable "click-away" signal: once the panel had foreground, any other
+  // process becoming foreground dismisses it (Phase 18.2).
+  void StartQuickForegroundWatch();
+  void StopQuickForegroundWatch();
+  void CheckQuickForeground();
+
   // Hands shell paths (drag & drop) to the Dart side as UTF-8 strings.
   void PublishDroppedPaths(const std::vector<std::string>& paths);
 
@@ -111,6 +120,9 @@ class FlutterWindow : public Win32Window {
   // settled: the spurious WM_ACTIVATE(WA_INACTIVE) produced while forcing the
   // foreground must not close the panel immediately.
   bool quick_activation_settling_ = false;
+  // Set once the HUD itself has been the foreground window; only after that does
+  // "another process owns the foreground" mean the user clicked away.
+  bool quick_had_foreground_ = false;
   LONG_PTR quick_saved_style_ = 0;
   LONG_PTR quick_saved_ex_style_ = 0;
   RECT quick_saved_rect_ = {};

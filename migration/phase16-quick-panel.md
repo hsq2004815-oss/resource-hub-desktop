@@ -292,3 +292,36 @@ Flutter 的 `Color.lerp` 会逐通道插值，中途得到"半透明深灰"，�
 
 截图：`migration/screenshots/phase16-quick-folders-expanded.png`（面板内空白点击后仍保持打开的场景）。
 
+---
+
+## 11. 修复记录 — Phase 18.2：第一次点面板外不关闭（用户反馈）
+
+**反馈**：18.1 之后「退出还是感觉很僵硬」——打开面板后必须先点一下面板内部，再点其他地方才能关闭；
+第一次点面板外不生效。
+
+**根因**：HUD 打开时的前台是用 `AttachThreadInput` 强制拿到的，这种 hand-off 之后，
+Windows 第一次把前台切到别的进程时**不一定**给顶层窗口投递 `WM_ACTIVATE(WA_INACTIVE)`；
+面板窗口此时确实已失焦（`GetForegroundWindow()` 已变成别的程序），但 runner 收不到关闭信号。
+点一下面板内部会让窗口变成"正常激活"状态，之后的外部点击才会投递 `WM_ACTIVATE`——
+所以表现为"必须先点面板再点外面"。之前 `verify_quick_panel.py` 的探针先点击了搜索框，掩盖了该问题。
+
+**修复**：HUD 打开期间 runner 安装 100 ms 定时器（`kQuickForegroundTimerId`）：
+- 只要 `GetForegroundWindow()` 属于本进程，就记为"HUD 已拿到前台"（`quick_had_foreground_`）；
+- 一旦前台变成其他进程，且此前 HUD 拿到过前台，就调用现有 `NotifyQuickDismissed()`（不抢焦点）；
+- 进入 HUD 时先跳过 `quick_activation_settling_` 的激活抖动；`ExitQuickMode` 停掉定时器。
+
+`WM_ACTIVATE` 路径保留作为第二重保障；`Esc`、再按同组热键、托盘点击等关闭方式不变。
+
+**验证**：
+
+| 场景 | 结果 |
+|---|---|
+| 普通窗口可见 → 打开文件夹/网站 HUD → **第一次**点面板外 | 立即关闭并还原完整窗口，PASS |
+| 窗口在托盘 → 打开 HUD → 第一次点面板外 | 立即隐藏回托盘，PASS |
+| 面板内空白点击 | 仍保持打开（18.1 行为不变） |
+| Flutter 测试 | 66 / 66 |
+| `verify_quick_panel.py` | **10 / 10 PASS**（新增 `outside_click_closes_fresh_hud`；原外部点击探针保留） |
+| `verify_shell.py` | 9 / 9 PASS |
+
+说明：面板关闭延迟最多约 100 ms（定时器周期），只存在于 HUD 打开期间。
+

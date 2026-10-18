@@ -379,8 +379,29 @@ def main() -> int:
         "frameless={frameless} visible={visible} size={width}x{height}".format(**restored),
     )
 
-    # 3. Quick folders hotkey -> folders HUD; expand the first resource with the
-    #    keyboard so the lazily loaded children are captured too.
+    # 3. A freshly opened folders HUD must close on the *first* outside click,
+    #    without any click inside the panel first (Phase 18.2 regression guard).
+    key_combo(hotkeys["quickFolders"])
+    opened_fresh = wait_until(lambda: hud_is_open(hwnd))
+    screen_w = user32.GetSystemMetrics(0)
+    click_at(screen_w - 40, 12)
+    outside_first_click = wait_until(
+        lambda: window_state(hwnd)["visible"]
+        and not window_state(hwnd)["frameless"],
+        timeout=5.0,
+    )
+    record(
+        "outside_click_closes_fresh_hud",
+        opened_fresh and outside_first_click,
+        "opened={opened} frameless={frameless} visible={visible} size={width}x{height}".format(
+            opened=opened_fresh, **window_state(hwnd)
+        ),
+    )
+    if not (window_state(hwnd)["visible"] and not window_state(hwnd)["frameless"]):
+        key_tap(VK_ESCAPE)
+
+    # 3b. Reopen, expand the first folder with the keyboard so lazily loaded
+    #     children are captured too.
     key_combo(hotkeys["quickFolders"])
     wait_until(lambda: hud_is_open(hwnd))
     focus_hud(hwnd)
@@ -396,8 +417,8 @@ def main() -> int:
         "frameless={frameless} toolwindow={toolwindow} size={width}x{height}".format(**folders),
     )
 
-    # 3b. A blank click *inside* the HUD must keep it open (Phase 18.1): only
-    #     clicks outside the panel (runner WM_ACTIVATE) dismiss it.
+    # 3c. A blank click *inside* the HUD must keep it open (Phase 18.1): only
+    #     clicks outside the panel dismiss it.
     rect = wintypes.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
     width = rect.right - rect.left
@@ -412,10 +433,7 @@ def main() -> int:
         ),
     )
 
-    # 3c. Clicking outside (another window / desktop) dismisses the HUD and
-    #     restores the full window that was visible before the hotkey.
-    screen_w = user32.GetSystemMetrics(0)
-    screen_h = user32.GetSystemMetrics(1)
+    # 3d. Then an outside click dismisses it and restores the full window.
     click_at(screen_w - 40, 12)
     restored_after_outside = wait_until(
         lambda: window_state(hwnd)["visible"]
@@ -428,10 +446,6 @@ def main() -> int:
         "frameless={frameless} visible={visible} size={width}x{height}".format(
             **window_state(hwnd)
         ),
-    )
-    key_tap(VK_ESCAPE)
-    wait_until(
-        lambda: window_state(hwnd)["visible"] and not window_state(hwnd)["frameless"]
     )
 
     # 4. The legacy toggle still hides / shows the full window.

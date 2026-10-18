@@ -36,6 +36,13 @@ const UINT kWakeMessage = ::RegisterWindowMessageW(kShowWindowMessageName);
 // ForceForeground() has been processed.
 constexpr UINT kQuickActivationSettled = WM_APP + 78;
 
+// While the HUD is open, poll the system foreground window. The AttachThreadInput
+// hand-off used by ForceForeground() does not always deliver
+// WM_ACTIVATE(WA_INACTIVE) to the top-level window, so the first click outside
+// could otherwise be ignored until the panel was clicked once (Phase 18.2).
+constexpr UINT_PTR kQuickForegroundTimerId = 0x5251;
+constexpr UINT kQuickForegroundTimerIntervalMs = 100;
+
 // Property key used to find the FlutterWindow instance from the subclassed
 // Flutter view window procedure.
 constexpr wchar_t kChildWindowProp[] = L"ResourceHubFlutterWindow";
@@ -512,6 +519,8 @@ bool FlutterWindow::EnterQuickMode(int logical_width, int logical_height) {
   // Forcing the foreground produces a transient WA_INACTIVE; only accept
   // dismissal after that activation traffic has been drained.
   ::PostMessageW(handle, kQuickActivationSettled, 0, 0);
+  quick_had_foreground_ = false;
+  StartQuickForegroundWatch();
   return true;
 }
 
@@ -526,6 +535,8 @@ void FlutterWindow::ExitQuickMode(int visibility) {
   quick_mode_ = false;
   quick_dismiss_posted_ = false;
   quick_activation_settling_ = false;
+  quick_had_foreground_ = false;
+  StopQuickForegroundWatch();
   // Hide before restoring the frame when the window is going away: otherwise the
   // HUD-sized window briefly grows back on screen while Flutter still displays
   // the previous frame, leaving black margins around a stale tree (Phase 16 QA).
@@ -566,6 +577,43 @@ void FlutterWindow::NotifyQuickDismissed() {
   // exitQuickMode(), which clears the flag.
   quick_dismiss_posted_ = true;
   window_channel_->InvokeMethod("quickDismissed", nullptr);
+}
+
+void FlutterWindow::StartQuickForegroundWatch() {
+  HWND handle = GetHandle();
+  if (handle == nullptr) {
+    return;
+  }
+  ::SetTimer(handle, kQuickForegroundTimerId, kQuickForegroundTimerIntervalMs,
+             nullptr);
+}
+
+void FlutterWindow::StopQuickForegroundWatch() {
+  HWND handle = GetHandle();
+  if (handle != nullptr) {
+    ::KillTimer(handle, kQuickForegroundTimerId);
+  }
+}
+
+void FlutterWindow::CheckQuickForeground() {
+  if (!quick_mode_ || quick_activation_settling_ || quick_dismiss_posted_) {
+    return;
+  }
+  const HWND foreground = ::GetForegroundWindow();
+  if (foreground == nullptr) {
+    return;
+  }
+  DWORD foreground_pid = 0;
+  ::GetWindowThreadProcessId(foreground, &foreground_pid);
+  if (foreground_pid == ::GetCurrentProcessId()) {
+    // The HUD (or its Flutter view) owns the foreground: a later switch to any
+    // other process is a click-away.
+    quick_had_foreground_ = true;
+    return;
+  }
+  if (quick_had_foreground_) {
+    NotifyQuickDismissed();
+  }
 }
 
 void FlutterWindow::RequestQuit() {
@@ -700,6 +748,11 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   // Forcing the foreground for the quick panel briefly produces
   // WM_ACTIVATE(WA_INACTIVE) traffic; ignore dismissal until the posted
   // "settled" message arrives.
+  if (quick_mode_ && message == WM_TIMER &&
+      wparam == kQuickForegroundTimerId) {
+    CheckQuickForeground();
+    return 0;
+  }
   if (quick_mode_ && message == WM_ACTIVATE &&
       LOWORD(wparam) == WA_INACTIVE) {
     if (!quick_activation_settling_) {
