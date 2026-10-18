@@ -4,6 +4,10 @@
 /// `resource_hub/window` channel. Every call is a no-op when the platform
 /// handler is absent (widget tests, non-Windows targets), so callers never need
 /// to guard.
+///
+/// Incoming notifications (`quickDismissed`) are exposed by [NativeShell]: it is
+/// the single owner of the channel's message handler, so two `setMethodCallHandler`
+/// calls cannot overwrite each other.
 library;
 
 import 'package:flutter/services.dart';
@@ -33,6 +37,23 @@ abstract final class WindowControl {
 
   static Future<bool> isVisible() async =>
       await _invoke<bool>('isVisible') ?? false;
+
+  /// Phase 16: shrinks the window into a frameless, topmost quick panel.
+  ///
+  /// [width] and [height] are logical pixels; the runner scales them to the
+  /// monitor DPI and centres the panel on the monitor under the cursor.
+  static Future<bool> enterQuickMode({
+    required double width,
+    required double height,
+  }) async =>
+      await _invoke<bool>('enterQuickMode', <String, double>{
+        'width': width,
+        'height': height,
+      }) ??
+      false;
+
+  /// Restores the saved frame, size and visibility after [enterQuickMode].
+  static Future<void> exitQuickMode() => _invoke<void>('exitQuickMode');
 
   /// Destroys the window; the process exits and the backend sees stdin EOF.
   static Future<void> quit() => _invoke<void>('quit');

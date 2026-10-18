@@ -247,10 +247,17 @@ class BackendRepository implements ResourceApi {
   @override
   Future<HotkeyStatus> startHotkey() async {
     final Map<String, dynamic> result = await client.call('hotkey.start');
+    final List<dynamic> raw =
+        result['registrations'] as List<dynamic>? ?? <dynamic>[];
     return HotkeyStatus(
       registered: result['registered'] as bool? ?? false,
       label: result['label'] as String? ?? '',
       reason: result['reason'] as String?,
+      registrations: raw
+          .map((dynamic entry) => HotkeyRegistration.fromJson(
+                entry as Map<String, dynamic>,
+              ))
+          .toList(growable: false),
     );
   }
 

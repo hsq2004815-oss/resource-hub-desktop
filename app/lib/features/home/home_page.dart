@@ -30,6 +30,7 @@ import 'resource_detail_panel.dart';
 import 'resource_form.dart';
 import 'resource_list_panel.dart';
 import 'settings_dialog.dart';
+import '../quick/quick_panel.dart';
 
 /// A status line message: either an i18n key with args, or literal text.
 class _Status {
@@ -136,6 +137,15 @@ class _HomePageState extends State<HomePage> {
   bool _loading = true;
   String? _loadFailure;
 
+  /// Phase 16: the window is currently morphed into the compact quick panel.
+  bool _quickMode = false;
+  QuickPanelKind _quickKind = QuickPanelKind.links;
+
+  /// Whether the main window was visible when the quick panel opened; the
+  /// runner restores that state on close, so Esc returns to where the user was.
+  bool _quickReturnVisible = false;
+  StreamSubscription<void>? _quickDismissSubscription;
+
   ResourceApi get _repo => widget.api;
   bool get _dataCorrupt => widget.dataCorrupt;
 
@@ -154,6 +164,10 @@ class _HomePageState extends State<HomePage> {
     // The backend owns the global hotkey; a press arrives as an event and the
     // window toggle happens here so the search box can take focus afterwards.
     _eventSubscription = widget.api.events.listen(_onBackendEvent);
+    // The runner asks for the quick panel to close when the window loses focus,
+    // the tray icon is clicked, or Alt+F4 is pressed (Phase 16).
+    _quickDismissSubscription =
+        NativeShell.quickDismissals.listen((_) => unawaited(_closeQuick()));
     // Shell file drops arrive from the runner (WM_DROPFILES -> method channel).
     _dropSubscription = NativeShell.drops.listen(_handleDropPaths);
     _reloadAll();
@@ -171,6 +185,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _eventSubscription?.cancel();
     _dropSubscription?.cancel();
+    _quickDismissSubscription?.cancel();
     _search.dispose();
     _searchFocus.dispose();
     _listScroll.dispose();
@@ -182,10 +197,99 @@ class _HomePageState extends State<HomePage> {
     if (event.name != 'hotkey') {
       return;
     }
+    switch (event.payload['action']) {
+      case 'quickLinks':
+        await _openQuick(QuickPanelKind.links);
+      case 'quickFolders':
+        await _openQuick(QuickPanelKind.folders);
+      default:
+        await _toggleMainWindow();
+    }
+  }
+
+  /// Ctrl+Alt+Space. While the quick panel is up it expands to the full window
+  /// instead of toggling the window off.
+  Future<void> _toggleMainWindow() async {
+    if (_quickMode) {
+      await _closeQuick(showFullWindow: true);
+      return;
+    }
     final bool visible = await WindowControl.toggle();
     if (visible && mounted) {
       _searchFocus.requestFocus();
     }
+  }
+
+  // -- quick panel (Phase 16) ---------------------------------------------
+  Future<void> _openQuick(QuickPanelKind kind) async {
+    if (_quickMode) {
+      // Same shortcut again closes the panel; the other quick shortcut switches
+      // the tree in place without resizing the window again.
+      if (_quickKind == kind) {
+        await _closeQuick();
+        return;
+      }
+      setState(() => _quickKind = kind);
+      return;
+    }
+    _quickReturnVisible = await WindowControl.isVisible();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _quickMode = true;
+      _quickKind = kind;
+    });
+    await WindowControl.enterQuickMode(width: 480, height: 600);
+  }
+
+  Future<void> _closeQuick({bool showFullWindow = false}) async {
+    if (!_quickMode) {
+      return;
+    }
+    final bool wasVisible = _quickReturnVisible;
+    // The runner restores the saved frame, size and visibility; when the panel
+    // was opened over a hidden window Esc goes back to the tray.
+    await WindowControl.exitQuickMode();
+    if (showFullWindow && !wasVisible) {
+      await WindowControl.show();
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() => _quickMode = false);
+    if (showFullWindow || wasVisible) {
+      _searchFocus.requestFocus();
+    }
+  }
+
+  void _switchQuickKind() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _quickKind = _quickKind.isLinks
+          ? QuickPanelKind.folders
+          : QuickPanelKind.links;
+    });
+  }
+
+  Future<void> _openFromQuick(ResourceItem item) async {
+    final ViewMode mode =
+        _quickKind.isLinks ? ViewMode.links : ViewMode.folders;
+    await _closeQuick();
+    if (!mounted) {
+      return;
+    }
+    await _openResource(item, mode);
+  }
+
+  Future<void> _openPathFromQuick(String path) async {
+    await _closeQuick();
+    if (!mounted) {
+      return;
+    }
+    await _openDetailPath(path);
   }
 
   // -- shell integration (drag & drop, dialogs, import/export) -------------
@@ -867,7 +971,9 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _open(ResourceItem item) async {
+  Future<void> _open(ResourceItem item) => _openResource(item, _mode);
+
+  Future<void> _openResource(ResourceItem item, ViewMode mode) async {
     final AppStrings strings = context.l10n;
     try {
       // The runner owns the foreground window, so it can hand foreground
@@ -876,7 +982,7 @@ class _HomePageState extends State<HomePage> {
       // (widget tests, non-Windows, or a rejected target).
       final bool handled = await NativeShell.openTarget(item.path);
       if (!handled) {
-        await _repo.open(_mode, item.id);
+        await _repo.open(mode, item.id);
       }
       _setStatus(_Status(text: '${strings.t('open')}: ${item.name}'));
     } on BackendException catch (error) {
@@ -1055,15 +1161,45 @@ class _HomePageState extends State<HomePage> {
       return strings.tx('data_corrupt_body');
     }
     final HotkeyStatus? hotkey = _hotkey;
-    if (hotkey != null && !hotkey.registered && hotkey.reason == 'unavailable') {
+    if (hotkey != null && hotkey.reason == 'unavailable') {
       return strings.tx('hotkey_unavailable_reason', <Object?>[hotkey.label]);
     }
+    final List<HotkeyRegistration> unavailable =
+        hotkey?.unavailable ?? const <HotkeyRegistration>[];
+    if (unavailable.isNotEmpty) {
+      final String labels = unavailable
+          .map((HotkeyRegistration entry) => entry.label)
+          .join(' / ');
+      return strings.tx('hotkey_unavailable_any', <Object?>[labels]);
+    }
     return strings.t('summary_all', <Object?>[_visible.length, _current.length]);
+  }
+
+  /// The compact tree HUD shares the loaded collections with the main window.
+  Widget _buildQuick(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainerLow,
+      child: QuickPanel(
+        key: ValueKey<QuickPanelKind>(_quickKind),
+        kind: _quickKind,
+        links: _links,
+        folders: _folders,
+        loadChildren: _repo.listChildren,
+        onOpenItem: (ResourceItem item) => unawaited(_openFromQuick(item)),
+        onOpenPath: (String path) => unawaited(_openPathFromQuick(path)),
+        onSwitchKind: _switchQuickKind,
+        onClose: () => unawaited(_closeQuick()),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final AppStrings strings = context.l10n;
+    if (_quickMode) {
+      return _buildQuick(context);
+    }
     final List<ResourceItem> visible = _visible;
     final ResourceItem? selected = _selected;
     final ListSummary summary = ListSummary(

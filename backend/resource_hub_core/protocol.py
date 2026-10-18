@@ -39,7 +39,7 @@ import json
 import sys
 import threading
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, IO, Mapping
 
@@ -121,7 +121,7 @@ class ServerState:
     settings_store: SettingsStore
     settings: Settings
     load_error: str | None = None
-    hotkey: GlobalHotkeyListener | None = None
+    hotkey: list[GlobalHotkeyListener] = field(default_factory=list)
 
 
 class Dispatcher:
@@ -373,22 +373,60 @@ class Dispatcher:
         return {"available": is_combination_available(hotkey_id)}
 
     # -- hotkey ------------------------------------------------------------
+    def _hotkey_pressed(self, action: str) -> Callable[[], None]:
+        """Build the ``on_press`` callback for one hotkey ``action``."""
+        return lambda: self.writer.event("hotkey", {"action": action})
+
     def _hotkey_start(self, params: Mapping[str, Any]) -> dict[str, Any]:
         self.stop_hotkey()
         settings = self.state.settings
-        if not settings.global_hotkey_enabled:
-            return {"registered": False, "label": settings.global_hotkey_id,
-                    "reason": "disabled"}
-        listener = GlobalHotkeyListener(
-            settings.global_hotkey_id,
-            lambda: self.writer.event("hotkey", {"action": "toggle"}),
+        targets = (
+            ("toggle", settings.global_hotkey_id),
+            ("quickLinks", settings.quick_links_hotkey_id),
+            ("quickFolders", settings.quick_folders_hotkey_id),
         )
-        registered = listener.start()
-        self.state.hotkey = listener if registered else None
+        if not settings.global_hotkey_enabled:
+            return {
+                "registered": False,
+                "label": settings.global_hotkey_id,
+                "reason": "disabled",
+                "registrations": [
+                    {
+                        "action": action,
+                        "label": label,
+                        "registered": False,
+                        "reason": "disabled",
+                    }
+                    for action, label in targets
+                ],
+            }
+
+        # One listener per action: three message pumps are independent because
+        # each registers with hWnd NULL on its own thread.
+        registrations: list[dict[str, Any]] = []
+        toggle_label = settings.global_hotkey_id
+        toggle_registered = False
+        for action, label in targets:
+            listener = GlobalHotkeyListener(label, self._hotkey_pressed(action))
+            registered = listener.start()
+            if registered:
+                self.state.hotkey.append(listener)
+                if action == "toggle":
+                    toggle_label = listener.active_label
+                    toggle_registered = True
+            registrations.append(
+                {
+                    "action": action,
+                    "label": listener.active_label,
+                    "registered": registered,
+                    "reason": None if registered else "unavailable",
+                }
+            )
         return {
-            "registered": registered,
-            "label": listener.active_label,
-            "reason": None if registered else "unavailable",
+            "registered": toggle_registered,
+            "label": toggle_label,
+            "reason": None if toggle_registered else "unavailable",
+            "registrations": registrations,
         }
 
     def _hotkey_stop(self, params: Mapping[str, Any]) -> dict[str, Any]:
@@ -396,9 +434,9 @@ class Dispatcher:
         return {"stopped": True}
 
     def stop_hotkey(self) -> None:
-        if self.state.hotkey is not None:
-            self.state.hotkey.stop()
-            self.state.hotkey = None
+        for listener in self.state.hotkey:
+            listener.stop()
+        self.state.hotkey.clear()
 
 
 class JsonLinesServer:

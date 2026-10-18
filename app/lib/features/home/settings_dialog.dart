@@ -19,6 +19,9 @@ import '../../util/hotkeys.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_fields.dart';
 
+/// Which recorder row is currently capturing a key combination.
+enum _HotkeyField { toggle, quickLinks, quickFolders }
+
 class SettingsDialog extends StatefulWidget {
   const SettingsDialog({
     super.key,
@@ -52,7 +55,8 @@ class SettingsDialog extends StatefulWidget {
 class _SettingsDialogState extends State<SettingsDialog> {
   late AppSettings _settings = widget.settings;
   final FocusNode _hotkeyFocus = FocusNode(debugLabel: 'hotkey-recorder');
-  bool _recording = false;
+  _HotkeyField? _recordingField;
+  _HotkeyField? _errorField;
   String? _hotkeyError;
 
   // The dialog route is not rebuilt by HomePage when the app-level theme/language
@@ -63,7 +67,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
   @override
   void dispose() {
-    if (_recording) {
+    if (_recordingField != null) {
       unawaited(widget.onHotkeyRecordingChanged(false));
     }
     _hotkeyFocus.dispose();
@@ -94,12 +98,13 @@ class _SettingsDialogState extends State<SettingsDialog> {
     await widget.onSettingsChanged(next);
   }
 
-  Future<void> _startRecording() async {
-    if (_recording || !_settings.globalHotkeyEnabled) {
+  Future<void> _startRecording(_HotkeyField field) async {
+    if (_recordingField != null || !_settings.globalHotkeyEnabled) {
       return;
     }
     setState(() {
-      _recording = true;
+      _recordingField = field;
+      _errorField = null;
       _hotkeyError = null;
     });
     await widget.onHotkeyRecordingChanged(true);
@@ -107,17 +112,27 @@ class _SettingsDialogState extends State<SettingsDialog> {
   }
 
   Future<void> _cancelRecording() async {
-    if (!_recording) {
+    if (_recordingField == null) {
       return;
     }
-    setState(() => _recording = false);
+    setState(() => _recordingField = null);
     await widget.onHotkeyRecordingChanged(false);
   }
+
+  List<String> _otherHotkeyIds(_HotkeyField field) => <String>[
+        if (field != _HotkeyField.toggle) _settings.globalHotkeyId,
+        if (field != _HotkeyField.quickLinks) _settings.quickLinksHotkeyId,
+        if (field != _HotkeyField.quickFolders) _settings.quickFoldersHotkeyId,
+      ];
 
   /// Handles one key press while recording. Runs asynchronously because probing
   /// availability is a backend round-trip; the Focus callback below swallows the
   /// key event itself so no shortcut fires.
   Future<void> _captureKey(KeyEvent event) async {
+    final _HotkeyField? field = _recordingField;
+    if (field == null) {
+      return;
+    }
     final AppStrings t = context.l10n;
     final LogicalKeyboardKey key = event.logicalKey;
     if (key == LogicalKeyboardKey.escape) {
@@ -131,40 +146,127 @@ class _SettingsDialogState extends State<SettingsDialog> {
     }
     final List<String> modifiers = hotkeyModifiers();
     if (modifiers.isEmpty) {
-      setState(() => _hotkeyError = t.t('hotkey_invalid'));
+      setState(() {
+        _errorField = field;
+        _hotkeyError = t.t('hotkey_invalid');
+      });
       return;
     }
     final String label = formatHotkey(modifiers, keyName);
+    // The three actions are registered independently; using one combination for
+    // two of them would make the second registration fail silently.
+    if (_otherHotkeyIds(field).contains(label)) {
+      setState(() {
+        _errorField = field;
+        _hotkeyError = t.tx('hotkey_duplicate');
+      });
+      return;
+    }
     bool available;
     try {
       available = await widget.onProbeHotkey(label);
     } catch (_) {
       available = false;
     }
-    if (!mounted) {
+    if (!mounted || _recordingField != field) {
       return;
     }
     if (!available) {
-      setState(() => _hotkeyError = t.t('hotkey_in_use', <Object?>[label]));
+      setState(() {
+        _errorField = field;
+        _hotkeyError = t.t('hotkey_in_use', <Object?>[label]);
+      });
       return;
     }
+    final AppSettings next = switch (field) {
+      _HotkeyField.toggle => _settings.copyWith(globalHotkeyId: label),
+      _HotkeyField.quickLinks => _settings.copyWith(quickLinksHotkeyId: label),
+      _HotkeyField.quickFolders =>
+        _settings.copyWith(quickFoldersHotkeyId: label),
+    };
     setState(() {
-      _recording = false;
+      _recordingField = null;
+      _errorField = null;
       _hotkeyError = null;
-      _settings = _settings.copyWith(globalHotkeyId: label);
+      _settings = next;
     });
-    // The parent saves the settings and re-registers the hotkey.
-    await widget.onSettingsChanged(_settings);
+    // The parent saves the settings and re-registers the hotkeys.
+    await widget.onSettingsChanged(next);
   }
 
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
-    if (!_recording) {
+    if (_recordingField == null) {
       return KeyEventResult.ignored;
     }
     if (event is KeyDownEvent) {
       unawaited(_captureKey(event));
     }
     return KeyEventResult.handled;
+  }
+
+  /// One recorder row: current combination + record/cancel button. Shared by the
+  /// full-window hotkey and the two quick-panel hotkeys (Phase 16).
+  Widget _hotkeyRow(
+    BuildContext context, {
+    required _HotkeyField field,
+    required String label,
+    required String value,
+  }) {
+    final AppStrings t = context.l10n;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme text = Theme.of(context).textTheme;
+    final bool recording = _recordingField == field;
+    final bool showError = _errorField == field && _hotkeyError != null;
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpacing.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: AppReadonlyValue(
+                  label: label,
+                  value: _settings.globalHotkeyEnabled ? value : '—',
+                  icon: Icons.keyboard_outlined,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              AppButton(
+                label: recording
+                    ? t.t('settings_hotkey_recording')
+                    : t.t('settings_hotkey_record'),
+                icon: recording
+                    ? Icons.fiber_manual_record
+                    : Icons.keyboard_alt_outlined,
+                variant: recording
+                    ? AppButtonVariant.danger
+                    : AppButtonVariant.secondary,
+                compact: true,
+                onPressed: _settings.globalHotkeyEnabled
+                    ? (recording
+                        ? () => unawaited(_cancelRecording())
+                        : () => unawaited(_startRecording(field)))
+                    : null,
+              ),
+            ],
+          ),
+          if (showError) ...<Widget>[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              _hotkeyError!,
+              style: text.bodySmall?.copyWith(color: scheme.error),
+            ),
+          ] else if (recording) ...<Widget>[
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              t.t('settings_hotkey_recording'),
+              style: text.bodySmall?.copyWith(color: scheme.primary),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   @override
@@ -280,7 +382,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
                           Switch(
                             value: _settings.globalHotkeyEnabled,
                             onChanged: (bool value) {
-                              if (_recording) {
+                              if (_recordingField != null) {
                                 unawaited(_cancelRecording());
                               }
                               unawaited(
@@ -294,51 +396,38 @@ class _SettingsDialogState extends State<SettingsDialog> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: AppReadonlyValue(
-                              label: t.t('settings_hotkey_enabled'),
-                              value: _settings.globalHotkeyEnabled
-                                  ? _settings.globalHotkeyId
-                                  : '—',
-                              icon: Icons.keyboard_outlined,
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          AppButton(
-                            label: _recording
-                                ? t.t('settings_hotkey_recording')
-                                : t.t('settings_hotkey_record'),
-                            icon: _recording
-                                ? Icons.fiber_manual_record
-                                : Icons.keyboard_alt_outlined,
-                            variant: _recording
-                                ? AppButtonVariant.danger
-                                : AppButtonVariant.secondary,
-                            compact: true,
-                            onPressed: _settings.globalHotkeyEnabled
-                                ? (_recording
-                                    ? () => unawaited(_cancelRecording())
-                                    : () => unawaited(_startRecording()))
-                                : null,
-                          ),
-                        ],
+                      _hotkeyRow(
+                        context,
+                        field: _HotkeyField.toggle,
+                        label: t.t('settings_hotkey_enabled'),
+                        value: _settings.globalHotkeyId,
                       ),
-                      if (_hotkeyError != null) ...<Widget>[
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          _hotkeyError!,
-                          style: text.bodySmall?.copyWith(color: scheme.error),
+                      const SizedBox(height: AppSpacing.lg),
+                      Text(
+                        t.tx('settings_quick_title'),
+                        style: text.labelMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
                         ),
-                      ] else if (_recording) ...<Widget>[
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          t.t('settings_hotkey_recording'),
-                          style: text.bodySmall?.copyWith(color: scheme.primary),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        t.tx('settings_quick_hint'),
+                        style: text.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
                         ),
-                      ],
+                      ),
+                      _hotkeyRow(
+                        context,
+                        field: _HotkeyField.quickLinks,
+                        label: t.tx('settings_quick_links'),
+                        value: _settings.quickLinksHotkeyId,
+                      ),
+                      _hotkeyRow(
+                        context,
+                        field: _HotkeyField.quickFolders,
+                        label: t.tx('settings_quick_folders'),
+                        value: _settings.quickFoldersHotkeyId,
+                      ),
                       const SizedBox(height: AppSpacing.xl),
                       Row(
                         children: <Widget>[

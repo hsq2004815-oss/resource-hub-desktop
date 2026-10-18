@@ -1,5 +1,6 @@
 #include "flutter_window.h"
 
+#include <dwmapi.h>
 #include <flutter/standard_method_codec.h>
 #include <shellapi.h>
 
@@ -12,6 +13,12 @@
 #include "resource.h"
 #include "utils.h"
 #include "window_messages.h"
+
+// Windows 11 corner-rounding attribute (DWMWA_WINDOW_CORNER_PREFERENCE). Kept as
+// a local constant so the runner also builds against older Windows SDKs.
+constexpr DWORD kDwmWindowCornerPreference = 33;
+constexpr int kDwmCornerRound = 2;    // DWMWCP_ROUND
+constexpr int kDwmCornerDefault = 0;  // DWMWCP_DEFAULT
 
 namespace {
 
@@ -47,6 +54,24 @@ std::wstring Utf16FromUtf8(const std::string& utf8) {
 bool HasCommandLineFlag(const wchar_t* flag) {
   const std::wstring command_line = ::GetCommandLineW();
   return command_line.find(flag) != std::wstring::npos;
+}
+
+// Reads an integer field from a map argument; returns |fallback| if absent.
+int MapInt(const flutter::EncodableMap& map, const char* key, int fallback) {
+  auto it = map.find(flutter::EncodableValue(key));
+  if (it == map.end()) {
+    return fallback;
+  }
+  if (const auto* value = std::get_if<int32_t>(&it->second)) {
+    return *value;
+  }
+  if (const auto* value = std::get_if<int64_t>(&it->second)) {
+    return static_cast<int>(*value);
+  }
+  if (const auto* value = std::get_if<double>(&it->second)) {
+    return static_cast<int>(*value);
+  }
+  return fallback;
 }
 
 // Reads a UTF-8 string field from a map argument; returns |fallback| if absent.
@@ -174,6 +199,29 @@ void FlutterWindow::RegisterChannels() {
         if (method == "quit") {
           RequestQuit();
           result->Success();
+          return;
+        }
+
+        // -- quick panel (Phase 16) ---------------------------------------
+        if (method == "enterQuickMode") {
+          int width = 480;
+          int height = 600;
+          if (const auto* args =
+                  std::get_if<flutter::EncodableMap>(call.arguments())) {
+            width = MapInt(*args, "width", width);
+            height = MapInt(*args, "height", height);
+          }
+          result->Success(
+              flutter::EncodableValue(EnterQuickMode(width, height)));
+          return;
+        }
+        if (method == "exitQuickMode") {
+          ExitQuickMode();
+          result->Success(flutter::EncodableValue(true));
+          return;
+        }
+        if (method == "isQuickMode") {
+          result->Success(flutter::EncodableValue(quick_mode_));
           return;
         }
 
@@ -340,11 +388,124 @@ void FlutterWindow::ShowFromTray() {
 }
 
 void FlutterWindow::ToggleVisibility() {
+  if (quick_mode_) {
+    // Tray click / wake message while the HUD is up: close the HUD and return to
+    // the pre-quick window state. Dart restores its layout from the notification.
+    NotifyQuickDismissed();
+    ExitQuickMode();
+    return;
+  }
   if (IsWindowVisibleNow()) {
     HideToTray();
   } else {
     ShowFromTray();
   }
+}
+
+bool FlutterWindow::EnterQuickMode(int logical_width, int logical_height) {
+  HWND handle = GetHandle();
+  if (handle == nullptr) {
+    return false;
+  }
+  if (quick_mode_) {
+    return true;
+  }
+  quick_was_visible_ = IsWindowVisibleNow();
+  // A minimized window would otherwise save a bogus (off-screen) rect.
+  if (::IsIconic(handle)) {
+    ::ShowWindow(handle, SW_RESTORE);
+  }
+  if (!::GetWindowRect(handle, &quick_saved_rect_)) {
+    return false;
+  }
+  quick_saved_style_ = ::GetWindowLongPtrW(handle, GWL_STYLE);
+  quick_saved_ex_style_ = ::GetWindowLongPtrW(handle, GWL_EXSTYLE);
+
+  // Flutter passes logical pixels; scale to the window's monitor DPI.
+  UINT dpi = ::GetDpiForWindow(handle);
+  if (dpi == 0) {
+    dpi = 96;
+  }
+  const int width = ::MulDiv(logical_width, static_cast<int>(dpi), 96);
+  const int height = ::MulDiv(logical_height, static_cast<int>(dpi), 96);
+
+  // Spotlight-style placement: horizontally centred on the monitor under the
+  // cursor, a little above the vertical centre.
+  POINT cursor = {};
+  ::GetCursorPos(&cursor);
+  const HMONITOR monitor = ::MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+  MONITORINFO info = {};
+  info.cbSize = sizeof(info);
+  int x = quick_saved_rect_.left;
+  int y = quick_saved_rect_.top;
+  if (::GetMonitorInfoW(monitor, &info)) {
+    const RECT work = info.rcWork;
+    x = work.left + ((work.right - work.left) - width) / 2;
+    y = work.top + ((work.bottom - work.top) * 12) / 100;
+  }
+
+  LONG_PTR style = quick_saved_style_ & ~(WS_CAPTION | WS_THICKFRAME |
+                                          WS_MINIMIZEBOX | WS_MAXIMIZEBOX |
+                                          WS_SYSMENU);
+  style |= WS_POPUP;
+  ::SetWindowLongPtrW(handle, GWL_STYLE, style);
+  ::SetWindowLongPtrW(handle, GWL_EXSTYLE,
+                      (quick_saved_ex_style_ & ~WS_EX_APPWINDOW) |
+                          WS_EX_TOOLWINDOW);
+  const int corner = kDwmCornerRound;
+  ::DwmSetWindowAttribute(handle, kDwmWindowCornerPreference,
+                          &corner, sizeof(corner));
+
+  quick_mode_ = true;
+  quick_dismiss_posted_ = false;
+  ::SetWindowPos(handle, HWND_TOPMOST, x, y, width, height,
+                 SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+  ::ShowWindow(handle, SW_SHOWNORMAL);
+  // Windows refuses SetForegroundWindow from a background process; the short
+  // topmost round-trip above is the trick the legacy app used.
+  ::AllowSetForegroundWindow(ASFW_ANY);
+  ::SetForegroundWindow(handle);
+  if (HWND child = ::GetWindow(handle, GW_CHILD)) {
+    ::SetFocus(child);
+  }
+  return true;
+}
+
+void FlutterWindow::ExitQuickMode() {
+  HWND handle = GetHandle();
+  if (handle == nullptr || !quick_mode_) {
+    return;
+  }
+  quick_mode_ = false;
+  quick_dismiss_posted_ = false;
+  ::SetWindowLongPtrW(handle, GWL_STYLE, quick_saved_style_);
+  ::SetWindowLongPtrW(handle, GWL_EXSTYLE, quick_saved_ex_style_);
+  const int corner = kDwmCornerDefault;
+  ::DwmSetWindowAttribute(handle, kDwmWindowCornerPreference,
+                          &corner, sizeof(corner));
+  ::SetWindowPos(handle, HWND_NOTOPMOST, quick_saved_rect_.left,
+                 quick_saved_rect_.top,
+                 quick_saved_rect_.right - quick_saved_rect_.left,
+                 quick_saved_rect_.bottom - quick_saved_rect_.top,
+                 SWP_FRAMECHANGED | SWP_NOACTIVATE);
+  if (quick_was_visible_) {
+    // Do not steal the foreground: the user likely clicked another window and
+    // that is exactly why the HUD is closing.
+    ::ShowWindow(handle, SW_RESTORE);
+    ::ShowWindow(handle, SW_SHOW);
+  } else {
+    ::ShowWindow(handle, SW_HIDE);
+  }
+}
+
+void FlutterWindow::NotifyQuickDismissed() {
+  if (!window_channel_ || !quick_mode_ || quick_dismiss_posted_) {
+    return;
+  }
+  // One notification per quick session; Dart restores its UI and calls
+  // exitQuickMode(), which clears the flag.
+  quick_dismiss_posted_ = true;
+  window_channel_->InvokeMethod("quickDismissed", nullptr);
 }
 
 void FlutterWindow::RequestQuit() {
@@ -465,7 +626,20 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               LPARAM const lparam) noexcept {
   // A second launch asks the running instance to come to the front.
   if (message == kWakeMessage) {
+    if (quick_mode_) {
+      NotifyQuickDismissed();
+      ExitQuickMode();
+    }
     ShowFromTray();
+    return 0;
+  }
+
+  // The quick panel is a "click-away to dismiss" overlay: losing activation (the
+  // user clicked another app, the desktop, or a browser opened by the panel)
+  // closes it. Dart decides whether the window should stay visible afterwards.
+  if (quick_mode_ && message == WM_ACTIVATE &&
+      LOWORD(wparam) == WA_INACTIVE) {
+    NotifyQuickDismissed();
     return 0;
   }
 
@@ -496,6 +670,12 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       return 0;
 
     case WM_CLOSE:
+      // The quick panel has no title bar; Alt+F4 asks the shell to close it, so
+      // treat it as "dismiss the HUD" rather than "hide the app".
+      if (quick_mode_) {
+        NotifyQuickDismissed();
+        return 0;
+      }
       // Legacy behaviour: the close button hides to the tray, it does not quit.
       if (!quitting_) {
         HideToTray();

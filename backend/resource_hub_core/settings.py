@@ -16,6 +16,8 @@ from .storage import CorruptDataError, JsonFileStore
 
 DEFAULT_LANGUAGE = "zh"
 DEFAULT_HOTKEY_ID = "Ctrl + Alt + Space"
+DEFAULT_QUICK_LINKS_HOTKEY_ID = "Ctrl + Alt + Shift + L"
+DEFAULT_QUICK_FOLDERS_HOTKEY_ID = "Ctrl + Alt + Shift + F"
 SUPPORTED_LANGUAGES = frozenset({"zh", "en"})
 
 
@@ -24,6 +26,8 @@ class Settings:
     language: str = DEFAULT_LANGUAGE
     global_hotkey_enabled: bool = True
     global_hotkey_id: str = DEFAULT_HOTKEY_ID
+    quick_links_hotkey_id: str = DEFAULT_QUICK_LINKS_HOTKEY_ID
+    quick_folders_hotkey_id: str = DEFAULT_QUICK_FOLDERS_HOTKEY_ID
     launch_at_startup: bool = False
 
     def to_json(self) -> dict[str, Any]:
@@ -31,6 +35,8 @@ class Settings:
             "language": self.language,
             "globalHotkeyEnabled": self.global_hotkey_enabled,
             "globalHotkeyId": self.global_hotkey_id,
+            "quickLinksHotkeyId": self.quick_links_hotkey_id,
+            "quickFoldersHotkeyId": self.quick_folders_hotkey_id,
             "launchAtStartup": self.launch_at_startup,
         }
 
@@ -52,6 +58,24 @@ class Settings:
         parsed = parse_hotkey_id(str(hotkey_id)) if hotkey_id is not None else None
         if parsed:
             settings = replace(settings, global_hotkey_id=parsed[0])
+
+        quick_links_id = raw.get("quickLinksHotkeyId")
+        parsed = (
+            parse_hotkey_id(str(quick_links_id))
+            if quick_links_id is not None
+            else None
+        )
+        if parsed:
+            settings = replace(settings, quick_links_hotkey_id=parsed[0])
+
+        quick_folders_id = raw.get("quickFoldersHotkeyId")
+        parsed = (
+            parse_hotkey_id(str(quick_folders_id))
+            if quick_folders_id is not None
+            else None
+        )
+        if parsed:
+            settings = replace(settings, quick_folders_hotkey_id=parsed[0])
 
         startup = raw.get("launchAtStartup")
         if isinstance(startup, bool):

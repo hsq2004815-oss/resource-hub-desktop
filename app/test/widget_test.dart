@@ -1,7 +1,9 @@
-﻿// Shell tests driven by an in-memory fake, so they never spawn Python.
+// Shell tests driven by an in-memory fake, so they never spawn Python.
 //
 // The real backend path is covered by `backend_client_test.dart`; these tests are
 // about layout, i18n, filtering and theme — they must stay fast and offline.
+
+import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -163,7 +165,14 @@ class FakeApi implements ResourceApi {
   List<ResourceItem> get links => List<ResourceItem>.unmodifiable(_links);
 
   @override
-  Stream<BackendEvent> get events => const Stream<BackendEvent>.empty();
+  Stream<BackendEvent> get events => _events.stream;
+  final StreamController<BackendEvent> _events =
+      StreamController<BackendEvent>.broadcast();
+
+  /// Simulates a backend-pushed global hotkey press (Phase 16).
+  void emitHotkey(String action) {
+    _events.add(BackendEvent('hotkey', <String, dynamic>{'action': action}));
+  }
 
   @override
   Future<ResourceListPage> list(
@@ -779,9 +788,11 @@ void main() {
     );
 
     await openSettings(tester);
-    expect(find.text('录制快捷键'), findsOneWidget);
+    expect(find.text('录制快捷键'), findsNWidgets(3));
 
-    await tester.tap(find.text('录制快捷键'));
+    // The full-window recorder is the first row; the other two belong to the
+    // quick-panel trees.
+    await tester.tap(find.text('录制快捷键').first);
     await tester.pumpAndSettle();
 
     // A modifier-only press must not be taken as the combination; the real key
@@ -794,7 +805,7 @@ void main() {
 
     expect(saved, isNotEmpty);
     expect(saved.last.globalHotkeyId, 'Ctrl + F11');
-    expect(find.text('录制快捷键'), findsOneWidget);
+    expect(find.text('录制快捷键'), findsNWidgets(3));
   });
 
   testWidgets('settings language can be switched back and forth',
@@ -1177,6 +1188,105 @@ void main() {
     expect(find.text(r'D:\Finance\budget.xlsx'), findsWidgets);
   });
 
+  testWidgets('quick links hotkey opens the tree HUD and Escape returns',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    expect(find.byTooltip('新增资源'), findsOneWidget);
+
+    api.emitHotkey('quickLinks');
+    await tester.pumpAndSettle();
+
+    // The full-window chrome is replaced by the compact tree panel.
+    expect(find.byTooltip('新增资源'), findsNothing);
+    expect(find.text('开发'), findsOneWidget);
+    expect(find.text('GitHub'), findsOneWidget);
+    expect(find.text('网站'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('新增资源'), findsOneWidget);
+  });
+
+  testWidgets('quick HUD Enter opens the selected site and closes',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    api.emitHotkey('quickLinks');
+    await tester.pumpAndSettle();
+    // First selectable row is pre-selected; Enter activates it.
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    expect(api.openCalls, 1);
+    expect(find.byTooltip('新增资源'), findsOneWidget);
+  });
+
+  testWidgets('quick folder tree expands lazily and search filters it',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    api.emitHotkey('quickFolders');
+    await tester.pumpAndSettle();
+    expect(find.text('项目主目录'), findsOneWidget);
+    expect(find.text('文件夹'), findsOneWidget);
+
+    // The first chevron belongs to the first expandable folder resource.
+    await tester.tap(find.byIcon(Icons.chevron_right).first);
+    await tester.pumpAndSettle();
+    expect(api.listChildrenCalls, 1);
+    expect(find.text('README.md'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '预算');
+    await tester.pumpAndSettle();
+    expect(find.text('预算表 2026'), findsOneWidget);
+    expect(find.text('项目主目录'), findsNothing);
+  });
+
+  testWidgets('quick HUD Tab switches between the two trees',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    api.emitHotkey('quickFolders');
+    await tester.pumpAndSettle();
+    expect(find.text('文件夹'), findsOneWidget);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(find.text('网站'), findsOneWidget);
+    expect(find.text('GitHub'), findsOneWidget);
+  });
+
+  testWidgets('clicking a quick HUD row opens it through the shell api',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    api.emitHotkey('quickLinks');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('GitHub'));
+    await tester.pumpAndSettle();
+
+    expect(api.openCalls, 1);
+    expect(find.byTooltip('新增资源'), findsOneWidget);
+  });
+
+  testWidgets('runner quickDismissed notification closes the HUD',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    api.emitHotkey('quickLinks');
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('新增资源'), findsNothing);
+
+    await _emitQuickDismiss();
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('新增资源'), findsOneWidget);
+  });
+
   test('translation table keeps zh/en key parity', () {
     final Set<String> zh = kTranslations['zh']!.keys.toSet();
     final Set<String> en = kTranslations['en']!.keys.toSet();
@@ -1193,6 +1303,17 @@ Future<void> _emitDrop(List<String> paths) {
     'resource_hub/window',
     const StandardMethodCodec().encodeMethodCall(
       MethodCall('dropPaths', paths),
+    ),
+    (ByteData? _) {},
+  );
+}
+/// Delivers the runner's "close the quick panel" notification.
+Future<void> _emitQuickDismiss() {
+  return TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .handlePlatformMessage(
+    'resource_hub/window',
+    const StandardMethodCodec().encodeMethodCall(
+      MethodCall('quickDismissed'),
     ),
     (ByteData? _) {},
   );

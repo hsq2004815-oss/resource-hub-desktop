@@ -290,17 +290,30 @@ class SettingsTests(ProtocolTestCase):
         settings = self.call("settings.get")["result"]["settings"]
         self.assertEqual(settings["language"], "zh")
         self.assertEqual(settings["globalHotkeyId"], "Ctrl + Alt + Space")
+        self.assertEqual(settings["quickLinksHotkeyId"], "Ctrl + Alt + Shift + L")
+        self.assertEqual(settings["quickFoldersHotkeyId"], "Ctrl + Alt + Shift + F")
 
     def test_set_normalises_and_persists(self) -> None:
         result = self.call(
             "settings.set",
-            {"settings": {"language": "en", "globalHotkeyId": "control+shift+q"}},
+            {
+                "settings": {
+                    "language": "en",
+                    "globalHotkeyId": "control+shift+q",
+                    "quickLinksHotkeyId": "control+shift+l",
+                    "quickFoldersHotkeyId": "alt+control+f",
+                }
+            },
         )["result"]["settings"]
         self.assertEqual(result["language"], "en")
         self.assertEqual(result["globalHotkeyId"], "Ctrl + Shift + Q")
+        self.assertEqual(result["quickLinksHotkeyId"], "Ctrl + Shift + L")
+        self.assertEqual(result["quickFoldersHotkeyId"], "Ctrl + Alt + F")
 
         persisted = json.loads((self.dir / "settings.json").read_text(encoding="utf-8"))
         self.assertEqual(persisted["language"], "en")
+        self.assertEqual(persisted["quickLinksHotkeyId"], "Ctrl + Shift + L")
+        self.assertEqual(persisted["quickFoldersHotkeyId"], "Ctrl + Alt + F")
 
     def test_set_rejects_non_object(self) -> None:
         frame = self.call("settings.set", {"settings": "nope"})
@@ -425,7 +438,48 @@ class EventChannelTests(ProtocolTestCase):
         self.call("settings.set", {"settings": {"globalHotkeyEnabled": False}})
         result = self.call("hotkey.start")["result"]
         self.assertFalse(result["registered"])
+        self.assertEqual(result["label"], "Ctrl + Alt + Space")
         self.assertEqual(result["reason"], "disabled")
+        self.assertEqual(
+            result["registrations"],
+            [
+                {
+                    "action": "toggle",
+                    "label": "Ctrl + Alt + Space",
+                    "registered": False,
+                    "reason": "disabled",
+                },
+                {
+                    "action": "quickLinks",
+                    "label": "Ctrl + Alt + Shift + L",
+                    "registered": False,
+                    "reason": "disabled",
+                },
+                {
+                    "action": "quickFolders",
+                    "label": "Ctrl + Alt + Shift + F",
+                    "registered": False,
+                    "reason": "disabled",
+                },
+            ],
+        )
+
+    def test_hotkey_start_disabled_uses_configured_quick_labels(self) -> None:
+        self.call(
+            "settings.set",
+            {
+                "settings": {
+                    "globalHotkeyEnabled": False,
+                    "quickLinksHotkeyId": "control+shift+l",
+                    "quickFoldersHotkeyId": "control+shift+f",
+                }
+            },
+        )
+        result = self.call("hotkey.start")["result"]
+        self.assertEqual(
+            [entry["label"] for entry in result["registrations"]],
+            ["Ctrl + Alt + Space", "Ctrl + Shift + L", "Ctrl + Shift + F"],
+        )
 
 
 if __name__ == "__main__":

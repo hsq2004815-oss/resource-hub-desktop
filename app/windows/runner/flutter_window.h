@@ -42,6 +42,17 @@ class FlutterWindow : public Win32Window {
   void RequestQuit();
   bool IsWindowVisibleNow();
 
+  // Phase 16: compact "quick panel" mode. The window keeps its Flutter engine but
+  // temporarily drops its frame, becomes topmost and shrinks to the requested
+  // logical size, so the same UI can render a Spotlight-style tree HUD. Restoring
+  // puts the saved frame, rect and topmost state back.
+  bool EnterQuickMode(int logical_width, int logical_height);
+  void ExitQuickMode();
+
+  // Tells Dart that the quick panel should close (focus was lost, tray click,
+  // second instance, Alt+F4). Dart calls exitQuickMode() and restores its UI.
+  void NotifyQuickDismissed();
+
   // Hands shell paths (drag & drop) to the Dart side as UTF-8 strings.
   void PublishDroppedPaths(const std::vector<std::string>& paths);
 
@@ -80,6 +91,14 @@ class FlutterWindow : public Win32Window {
   // Tray menu labels, pushed from Dart so they follow the UI language.
   std::wstring tray_toggle_label_ = L"Show / Hide";
   std::wstring tray_exit_label_ = L"Exit";
+
+  // Quick-panel state (see EnterQuickMode).
+  bool quick_mode_ = false;
+  bool quick_was_visible_ = false;
+  bool quick_dismiss_posted_ = false;
+  LONG_PTR quick_saved_style_ = 0;
+  LONG_PTR quick_saved_ex_style_ = 0;
+  RECT quick_saved_rect_ = {};
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

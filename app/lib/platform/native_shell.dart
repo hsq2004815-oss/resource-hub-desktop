@@ -14,12 +14,23 @@ abstract final class NativeShell {
   static const MethodChannel _channel = MethodChannel('resource_hub/window');
   static final StreamController<List<String>> _drops =
       StreamController<List<String>>.broadcast();
+  static final StreamController<void> _quickDismissals =
+      StreamController<void>.broadcast();
   static bool _handlerInstalled = false;
 
   /// Paths dropped onto the window (files and directories, already absolute).
   static Stream<List<String>> get drops {
     _installHandler();
     return _drops.stream;
+  }
+
+  /// Phase 16: the runner asks for the quick panel to close — the window lost
+  /// focus, the tray icon was clicked, a second instance woke the app, or Alt+F4
+  /// was pressed. [WindowControl] only sends commands; this is the matching
+  /// incoming side and keeps the channel's single message handler here.
+  static Stream<void> get quickDismissals {
+    _installHandler();
+    return _quickDismissals.stream;
   }
 
   static Future<String?> pickFolder() => _invoke<String>('pickFolder');
@@ -60,6 +71,10 @@ abstract final class NativeShell {
     }
     _handlerInstalled = true;
     _channel.setMethodCallHandler((MethodCall call) async {
+      if (call.method == 'quickDismissed') {
+        _quickDismissals.add(null);
+        return null;
+      }
       if (call.method != 'dropPaths') {
         return null;
       }
