@@ -395,6 +395,40 @@ def main() -> int:
         hud_is_open(hwnd),
         "frameless={frameless} toolwindow={toolwindow} size={width}x{height}".format(**folders),
     )
+
+    # 3b. A blank click *inside* the HUD must keep it open (Phase 18.1): only
+    #     clicks outside the panel (runner WM_ACTIVATE) dismiss it.
+    rect = wintypes.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    width = rect.right - rect.left
+    height = rect.bottom - rect.top
+    click_at(rect.left + width // 2, rect.top + int(height * 0.82))
+    time.sleep(0.5)
+    record(
+        "inside_blank_click_keeps_hud",
+        hud_is_open(hwnd),
+        "frameless={frameless} visible={visible} size={width}x{height}".format(
+            **window_state(hwnd)
+        ),
+    )
+
+    # 3c. Clicking outside (another window / desktop) dismisses the HUD and
+    #     restores the full window that was visible before the hotkey.
+    screen_w = user32.GetSystemMetrics(0)
+    screen_h = user32.GetSystemMetrics(1)
+    click_at(screen_w - 40, 12)
+    restored_after_outside = wait_until(
+        lambda: window_state(hwnd)["visible"]
+        and not window_state(hwnd)["frameless"],
+        timeout=5.0,
+    )
+    record(
+        "outside_click_restores_full_window",
+        restored_after_outside,
+        "frameless={frameless} visible={visible} size={width}x{height}".format(
+            **window_state(hwnd)
+        ),
+    )
     key_tap(VK_ESCAPE)
     wait_until(
         lambda: window_state(hwnd)["visible"] and not window_state(hwnd)["frameless"]

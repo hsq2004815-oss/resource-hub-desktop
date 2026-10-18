@@ -236,7 +236,7 @@ cd ..; D:\miniconda3\python.exe migration\tools\verify_quick_panel.py
 |---|---|
 | 记事本在前台 → 按快速键 | HUD 打开并成为前台（`foreground=True`），PASS |
 | 面板打开后点击桌面/其他程序 | 面板关闭；从托盘打开的场景直接回托盘 |
-| 点击面板内最后一行下方的空白 | 面板关闭；窗口可见时还原完整窗口 |
+| 点击面板内最后一行下方的空白 | 面板关闭；窗口可见时还原完整窗口（Phase 18.1 已改为不关闭） |
 | 记事本在前台 → 打开面板 → Esc | 面板关闭（键盘事件到达 HUD） |
 | Flutter 测试 | **60 / 60**（新增"点击面板空白关闭"） |
 | `verify_quick_panel.py` | 7 / 7 PASS（含 `foreground=True`） |
@@ -262,3 +262,33 @@ Flutter 的 `Color.lerp` 会逐通道插值，中途得到"半透明深灰"，�
 - Flutter 测试 60 / 60；`verify_quick_panel.py` 7 / 7。
 
 截图：`migration/screenshots/phase16-hover.png`。
+
+---
+
+## 10. 行为调整 — Phase 18.1：只点面板外关闭，面板内空白不再关闭（用户反馈）
+
+> 取代 §8 的「点击面板内最后一行下方空白也关闭」行为。
+
+**反馈**：弹出快速面板（网站树 / 文件夹树两个二级界面）后，点击**面板内部的空白区域**也会关闭；
+用户希望只有**点击面板以外的区域**（桌面、其他窗口）才关闭，面板内空白点击不应关闭。
+
+**实现**：
+
+- `QuickPanel` 去掉"空白处点击关闭"的 `_handleBlankTap`；列表区域外层的 `GestureDetector` 改为
+  `onTap: _handlePanelTap`，只负责把焦点还给搜索框（`HitTestBehavior.opaque`），**从不调用
+  `onClose()`**。行/折叠箭头的点击仍由各自 recognizer 处理。
+- 面板外关闭保持不变：runner 在 `WM_ACTIVATE(WA_INACTIVE)`（点击桌面/其他窗口）时发
+  `quickDismissed`，Dart 再调用 `exitQuickMode` 还原窗口。网站树、文件夹树共用同一个
+  `QuickPanel`，两种二级界面行为一致。
+
+**验证**：
+
+| 场景 | 结果 |
+|---|---|
+| 面板内空白处点击（列表下方大块空白） | 面板保持打开，搜索框重新获得焦点 |
+| 点击桌面/其他窗口 | 面板关闭；窗口可见时还原完整窗口，托盘场景回托盘 |
+| Flutter 测试 | **66 / 66**（原"点击面板空白关闭"改为"点击面板内空白保持打开"） |
+| `verify_quick_panel.py` | **9 / 9 PASS**（新增 `inside_blank_click_keeps_hud`、`outside_click_restores_full_window`） |
+
+截图：`migration/screenshots/phase16-quick-folders-expanded.png`（面板内空白点击后仍保持打开的场景）。
+

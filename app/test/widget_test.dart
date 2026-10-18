@@ -1485,16 +1485,27 @@ void main() {
     expect(find.byTooltip('新增资源'), findsOneWidget);
   });
 
-  testWidgets('clicking the empty area of the quick panel closes it',
-      (WidgetTester tester) async {
+  testWidgets('clicking inside the quick panel keeps it open', (
+    WidgetTester tester,
+  ) async {
     final FakeApi api = FakeApi();
     await pumpApp(tester, api: api);
     api.emitHotkey('quickLinks');
     await tester.pumpAndSettle();
     expect(find.byTooltip('新增资源'), findsNothing);
 
-    // Far below the small result list: the blank area must close the panel.
+    // Blank space inside the HUD must not dismiss it (Phase 18.1); only an
+    // outside click (runner WM_ACTIVATE -> quickDismissed) closes the panel.
     await tester.tapAt(const Offset(800, 900));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('新增资源'), findsNothing);
+
+    final TextField search = tester.widget<TextField>(
+      find.byType(TextField).first,
+    );
+    expect(search.focusNode?.hasFocus, isTrue);
+
+    await _emitQuickDismiss();
     await tester.pumpAndSettle();
     expect(find.byTooltip('新增资源'), findsOneWidget);
   });

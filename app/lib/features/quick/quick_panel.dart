@@ -512,36 +512,16 @@ class _QuickPanelState extends State<QuickPanel> {
   GlobalKey _keyFor(String rowKey) =>
       _rowKeys.putIfAbsent(rowKey, () => GlobalKey(debugLabel: rowKey));
 
-  /// Clicking the empty area below the last row closes the panel, like a popup.
+  /// Clicking any blank space *inside* the panel must not dismiss it.
   ///
-  /// The gesture detector sits around the body, so a tap on a row or a chevron
-  /// is claimed by that row's own recognizer and never reaches this handler;
-  /// taps above the rows (search field, group headers) are ignored because the
-  /// pointer is not below the last row.
-  void _handleBlankTap(TapUpDetails details) {
-    final AppStrings t = context.l10n;
-    final List<_QuickRow> rows = _rows(t);
-    if (rows.isEmpty) {
-      widget.onClose();
-      return;
-    }
-    double? lastRowBottom;
-    for (final _QuickRow row in rows.reversed) {
-      final BuildContext? rowContext = _rowKeys[row.key]?.currentContext;
-      if (rowContext == null) {
-        continue;
-      }
-      final RenderObject? render = rowContext.findRenderObject();
-      if (render is! RenderBox || !render.hasSize) {
-        continue;
-      }
-      lastRowBottom =
-          render.localToGlobal(Offset(0, render.size.height)).dy;
-      break;
-    }
-    if (lastRowBottom != null &&
-        details.globalPosition.dy > lastRowBottom + 2) {
-      widget.onClose();
+  /// Dismissal is owned by the runner: when the HUD loses activation because the
+  /// user clicked another window (or the desktop), Windows sends
+  /// WM_ACTIVATE(WA_INACTIVE) and Dart receives `quickDismissed`. This handler
+  /// only keeps the search field focused so typing/arrow keys keep working after
+  /// a blank click; it deliberately never calls [QuickPanel.onClose].
+  void _handlePanelTap() {
+    if (_searchFocus.canRequestFocus && !_searchFocus.hasFocus) {
+      _searchFocus.requestFocus();
     }
   }
 
@@ -585,8 +565,10 @@ class _QuickPanelState extends State<QuickPanel> {
           Divider(height: 1, thickness: 1, color: scheme.outlineVariant),
           Expanded(
             child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTapUp: _handleBlankTap,
+              // Taps on rows/folders are claimed by their own recognizers; taps
+              // on blank space fall through to here and only keep focus.
+              behavior: HitTestBehavior.opaque,
+              onTap: _handlePanelTap,
               child: body,
             ),
           ),
