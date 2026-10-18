@@ -248,6 +248,8 @@ class _MindMapState extends State<MindMap> {
   // -- layout -------------------------------------------------------------
   TextStyle _textStyle(_MapNode node) {
     return TextStyle(
+      fontFamily: AppTypography.fontFamily,
+      fontFamilyFallback: AppTypography.fontFamilyFallback,
       fontSize: node.isRoot ? 13.5 : (node.isFile ? 12 : 12.8),
       fontWeight: node.isRoot || node.isFolder
           ? FontWeight.w600

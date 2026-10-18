@@ -158,6 +158,7 @@ abstract final class AppTheme {
           fontSize: 12,
           color: scheme.onInverseSurface,
           fontFamily: AppTypography.fontFamily,
+          fontFamilyFallback: AppTypography.fontFamilyFallback,
         ),
         decoration: BoxDecoration(
           color: scheme.inverseSurface,
@@ -332,11 +333,46 @@ abstract final class AppTheme {
         borderSide: BorderSide(color: scheme.error, width: 1.6),
       ),
       hintStyle: TextStyle(
+        fontFamily: AppTypography.fontFamily,
+        fontFamilyFallback: AppTypography.fontFamilyFallback,
         fontSize: 13,
         color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
       ),
-      labelStyle: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
-      floatingLabelStyle: TextStyle(fontSize: 12.5, color: scheme.primary),
+      labelStyle: TextStyle(
+        fontFamily: AppTypography.fontFamily,
+        fontFamilyFallback: AppTypography.fontFamilyFallback,
+        fontSize: 13,
+        color: scheme.onSurfaceVariant,
+      ),
+      floatingLabelStyle: TextStyle(
+        fontFamily: AppTypography.fontFamily,
+        fontFamilyFallback: AppTypography.fontFamilyFallback,
+        fontSize: 12.5,
+        color: scheme.primary,
+      ),
+    );
+  }
+
+  /// Label style for the themed Material buttons.
+  ///
+  /// A [ButtonStyle] `textStyle` replaces (does not merge with) the text theme,
+  /// so a bare `TextStyle` lost the ThemeData font family and Material fell back
+  /// to the engine's default CJK font — the settings buttons rendered with a
+  /// different typeface than the rest of the UI (Phase 18.3). Always spell the
+  /// family out here.
+  static TextStyle _buttonLabelStyle({
+    required double fontSize,
+    required FontWeight fontWeight,
+    double? height,
+    double? letterSpacing,
+  }) {
+    return TextStyle(
+      fontFamily: AppTypography.fontFamily,
+      fontFamilyFallback: AppTypography.fontFamilyFallback,
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      height: height,
+      letterSpacing: letterSpacing,
     );
   }
 
@@ -356,7 +392,7 @@ abstract final class AppTheme {
       visualDensity: VisualDensity.standard,
       shape: const WidgetStatePropertyAll<OutlinedBorder>(StadiumBorder()),
       textStyle: WidgetStatePropertyAll<TextStyle?>(
-        const TextStyle(
+        _buttonLabelStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
           height: 1.2,
@@ -381,7 +417,7 @@ abstract final class AppTheme {
         RoundedRectangleBorder(borderRadius: AppRadius.smAll),
       ),
       textStyle: WidgetStatePropertyAll<TextStyle?>(
-        TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+        _buttonLabelStyle(fontSize: 13, fontWeight: FontWeight.w500),
       ),
     );
   }
@@ -398,7 +434,7 @@ abstract final class AppTheme {
         RoundedRectangleBorder(borderRadius: AppRadius.smAll),
       ),
       textStyle: WidgetStatePropertyAll<TextStyle?>(
-        TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+        _buttonLabelStyle(fontSize: 13, fontWeight: FontWeight.w500),
       ),
     );
   }

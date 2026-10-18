@@ -38,7 +38,7 @@ Python 后端负责数据读写、全局热键、导入导出与路径操作，�
 # 后端 269 个测试
 cd backend; D:\miniconda3\python.exe -m unittest discover -s tests -t .
 
-# 前端 analyze + 66 个测试
+# 前端 analyze + 67 个测试
 cd ..\app; flutter analyze; flutter test
 
 # 实机壳层（关窗→托盘、热键、二次启动、拖拽)

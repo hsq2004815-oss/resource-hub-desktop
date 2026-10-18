@@ -134,3 +134,27 @@ cd ..\bookmark-extension; D:\miniconda3\python.exe check_protocol.py; node --che
 # 端到端（真后端 + 模拟扩展，不启动浏览器）
 D:\miniconda3\python.exe migration\tools\verify_bookmark_extension.py
 ```
+
+## 10. 修复记录 — Phase 18.3：按钮字体不一致（用户反馈）
+
+**反馈**：设置里的「打开扩展目录」按钮文字与周围 UI 字体不一致，看起来偏细、像宋体。
+
+**根因**：`ThemeData.fontFamily` 只应用到 `TextTheme`；而 Material 按钮的
+`ButtonStyle.textStyle` 是**整体替换** `DefaultTextStyle`（不合并 textTheme）。主题里的
+`_filledStyle/_outlinedStyle/_textStyle` 写的是裸 `TextStyle(fontSize: 13, ...)`，没有
+`fontFamily`，引擎就退回默认 CJK 字体（宋体类），所以所有 Material 按钮（以及 Tooltip、
+`InputDecoration`、`TextField/Autocomplete`、思维导图节点文字）都用了和正文不同的字体。
+
+**修复**：凡是被直接当作文字样式使用、不经过 `TextTheme` 合并的 `TextStyle`，都显式带上
+`AppTypography.fontFamily` + `fontFamilyFallback`：
+
+- 新增 `_buttonLabelStyle(...)` 并用于 `_filledStyle` / `_outlinedStyle` / `_textStyle`（覆盖
+  primary / secondary / ghost / danger 全部 `AppButton`）；
+- tooltip、输入框 hint/label/floatingLabel；
+- `AppFields` 的 `TextField` / `Autocomplete`（共 3 处）；
+- 思维导图节点文字（`mind_map.dart` 的 `_textStyle`，同时用于测量与绘制）。
+
+**验证**：新增单测 `themed buttons keep the app CJK font family`（三种按钮主题的
+`textStyle` 字体族与 fallback 均等于 `AppTypography`），Flutter 测试 **67 / 67**；
+实机截图对比 `migration/screenshots/phase18-settings-font-compare.png`（上：修复前宋体回退；
+下：修复后与正文一致的微软雅黑），`phase18-settings-extension.png` 已更新。

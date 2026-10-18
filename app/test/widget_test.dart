@@ -13,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:resource_hub/data/backend_models.dart';
 import 'package:resource_hub/data/resource_api.dart';
 import 'package:resource_hub/design/app_theme.dart';
+import 'package:resource_hub/design/app_tokens.dart';
 import 'package:resource_hub/features/home/home_page.dart';
 import 'package:resource_hub/features/home/resource_detail_panel.dart';
 import 'package:resource_hub/features/home/resource_form.dart';
@@ -823,6 +824,20 @@ void main() {
 
     expect(find.text('预算表 2026'), findsNothing);
     expect(api.folders.map((ResourceItem e) => e.name), isNot(contains('预算表 2026')));
+  });
+
+  test('themed buttons keep the app CJK font family', () {
+    for (final ThemeData theme in <ThemeData>[AppTheme.light, AppTheme.dark]) {
+      for (final ButtonStyle? style in <ButtonStyle?>[
+        theme.filledButtonTheme.style,
+        theme.outlinedButtonTheme.style,
+        theme.textButtonTheme.style,
+      ]) {
+        final TextStyle? label = style?.textStyle?.resolve(<WidgetState>{});
+        expect(label?.fontFamily, AppTypography.fontFamily);
+        expect(label?.fontFamilyFallback, AppTypography.fontFamilyFallback);
+      }
+    }
   });
 
   test('light and dark schemes expose the semantic extension', () {

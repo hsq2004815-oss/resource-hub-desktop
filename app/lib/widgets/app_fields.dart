@@ -67,7 +67,12 @@ class AppTextField extends StatelessWidget {
           keyboardType: keyboardType,
           onChanged: onChanged,
           onSubmitted: onSubmitted,
-          style: TextStyle(fontSize: 13, color: scheme.onSurface),
+          style: TextStyle(
+            fontFamily: AppTypography.fontFamily,
+            fontFamilyFallback: AppTypography.fontFamilyFallback,
+            fontSize: 13,
+            color: scheme.onSurface,
+          ),
           decoration: InputDecoration(
             hintText: hint,
             errorText: errorText,
@@ -120,7 +125,12 @@ class AppSearchField extends StatelessWidget {
           controller: controller,
           focusNode: focusNode,
           onChanged: onChanged,
-          style: TextStyle(fontSize: 13, color: scheme.onSurface),
+          style: TextStyle(
+            fontFamily: AppTypography.fontFamily,
+            fontFamilyFallback: AppTypography.fontFamilyFallback,
+            fontSize: 13,
+            color: scheme.onSurface,
+          ),
           decoration: InputDecoration(
             hintText: hint,
             isDense: true,
@@ -224,7 +234,12 @@ class AppCategoryDropdown extends StatelessWidget {
         leadingIcon: leadingIcon == null
             ? null
             : Icon(leadingIcon, size: AppSizes.iconSm),
-        textStyle: TextStyle(fontSize: 13, color: scheme.onSurface),
+        textStyle: TextStyle(
+          fontFamily: AppTypography.fontFamily,
+          fontFamilyFallback: AppTypography.fontFamilyFallback,
+          fontSize: 13,
+          color: scheme.onSurface,
+        ),
         inputDecorationTheme: InputDecorationTheme(
           isDense: true,
           filled: true,
