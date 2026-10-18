@@ -1,0 +1,34 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Resource Hub (Windows, repo data)",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "${workspaceFolder}",
+      "program": "lib/main.dart"
+    },
+    {
+      "name": "Resource Hub (Windows, scratch data)",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "${workspaceFolder}",
+      "program": "lib/main.dart",
+      "env": {
+        "RH_DATA_DIR": "${workspaceFolder}/../build/dev-data"
+      }
+    },
+    {
+      "name": "Resource Hub (Windows, dark + English)",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "${workspaceFolder}",
+      "program": "lib/main.dart",
+      "env": {
+        "RH_DATA_DIR": "${workspaceFolder}/../build/dev-data",
+        "RH_THEME": "dark",
+        "RH_LANG": "en"
+      }
+    }
+  ]
+}

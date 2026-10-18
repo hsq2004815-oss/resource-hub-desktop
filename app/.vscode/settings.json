@@ -1,0 +1,10 @@
+{
+  // Hot reload whenever a Dart file is saved: this is the "live preview" loop
+  // for layout/theme work (native changes still need a restart).
+  "dart.flutterHotReloadOnSave": true,
+  "dart.previewFlutterUiGuides": true,
+  "dart.previewFlutterUiGuidesCustomTracking": false,
+  "dart.openDevTools": "flutter",
+  "editor.formatOnSave": true,
+  "editor.rulers": [80, 100]
+}

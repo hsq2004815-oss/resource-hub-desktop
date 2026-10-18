@@ -1,0 +1,87 @@
+/// Native shell features that have no pub package: file dialogs, drag & drop and
+/// the Windows Startup shortcut.
+///
+/// All of it lives in `windows/runner` behind the existing `resource_hub/window`
+/// method channel (see ADR-002), so the release build stays plugin-free and the
+/// UI keeps working in widget tests where the channel is absent.
+library;
+
+import 'dart:async';
+
+import 'package:flutter/services.dart';
+
+abstract final class NativeShell {
+  static const MethodChannel _channel = MethodChannel('resource_hub/window');
+  static final StreamController<List<String>> _drops =
+      StreamController<List<String>>.broadcast();
+  static bool _handlerInstalled = false;
+
+  /// Paths dropped onto the window (files and directories, already absolute).
+  static Stream<List<String>> get drops {
+    _installHandler();
+    return _drops.stream;
+  }
+
+  static Future<String?> pickFolder() => _invoke<String>('pickFolder');
+
+  /// Any file, for the form's "browse file" button.
+  static Future<String?> pickFile() => _invoke<String>('pickFile');
+
+  /// JSON only, for the import dialog.
+  static Future<String?> pickJsonFile() => _invoke<String>('pickJsonFile');
+
+  static Future<String?> saveJsonFile({required String suggestedName}) =>
+      _invoke<String>('saveFile', <String, String>{
+        'suggestedName': suggestedName,
+      });
+
+  static Future<bool> setLaunchAtStartup(bool enabled) async =>
+      await _invoke<bool>('setLaunchAtStartup', enabled) ?? false;
+
+  static Future<bool> isLaunchAtStartup() async =>
+      await _invoke<bool>('isLaunchAtStartup') ?? false;
+
+  /// Opens a URL / file / folder with the default shell handler.
+  ///
+  /// Returns false when the runner is unavailable (widget tests, non-Windows)
+  /// or the shell rejected the target, so callers can fall back to the Python
+  /// backend. Doing this in the runner keeps the foreground hand-off correct:
+  /// Explorer and browsers then open in front of the app instead of behind it.
+  static Future<bool> openTarget(String target) async =>
+      await _invoke<bool>('openTarget', target) ?? false;
+
+  /// Opens the containing folder and selects [path] in Explorer.
+  static Future<bool> revealPath(String path) async =>
+      await _invoke<bool>('revealPath', path) ?? false;
+
+  static void _installHandler() {
+    if (_handlerInstalled) {
+      return;
+    }
+    _handlerInstalled = true;
+    _channel.setMethodCallHandler((MethodCall call) async {
+      if (call.method != 'dropPaths') {
+        return null;
+      }
+      final Object? arguments = call.arguments;
+      final List<String> paths = arguments is List
+          ? arguments.whereType<String>().toList(growable: false)
+          : <String>[];
+      if (paths.isNotEmpty) {
+        _drops.add(paths);
+      }
+      return null;
+    });
+  }
+
+  static Future<T?> _invoke<T>(String method, [Object? arguments]) async {
+    try {
+      return await _channel.invokeMethod<T>(method, arguments);
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      // Shell actions are optional; a broken dialog must not break the UI.
+      return null;
+    }
+  }
+}
