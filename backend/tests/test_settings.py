@@ -8,10 +8,12 @@ import unittest
 from pathlib import Path
 
 from resource_hub_core.settings import (
+    DEFAULT_BOOKMARK_DELETE_MODE,
     DEFAULT_HOTKEY_ID,
     DEFAULT_LANGUAGE,
     DEFAULT_QUICK_FOLDERS_HOTKEY_ID,
     DEFAULT_QUICK_LINKS_HOTKEY_ID,
+    DELETE_MODES,
     Settings,
     SettingsStore,
 )
@@ -43,11 +45,29 @@ class SettingsNormalizeTests(unittest.TestCase):
                 self.assertFalse(settings.launch_at_startup)
                 self.assertTrue(settings.bookmark_sync_enabled)
                 self.assertEqual(settings.bookmark_custom_dir, "")
+                self.assertEqual(
+                    settings.bookmark_delete_mode, DEFAULT_BOOKMARK_DELETE_MODE
+                )
 
     def test_bookmark_defaults(self) -> None:
         settings = Settings()
         self.assertTrue(settings.bookmark_sync_enabled)
         self.assertEqual(settings.bookmark_custom_dir, "")
+        self.assertEqual(settings.bookmark_delete_mode, "ask")
+
+    def test_bookmark_delete_mode_defaults_and_values(self) -> None:
+        self.assertEqual(DEFAULT_BOOKMARK_DELETE_MODE, "ask")
+        self.assertEqual(set(DELETE_MODES), {"ask", "remove", "keep"})
+        for value in DELETE_MODES:
+            with self.subTest(value=value):
+                settings = Settings.normalize({"bookmarkDeleteMode": value})
+                self.assertEqual(settings.bookmark_delete_mode, value)
+
+    def test_invalid_bookmark_delete_mode_falls_back_to_ask(self) -> None:
+        for value in (None, "", "   ", "delete", "REMOVE", 42, True, ["remove"]):
+            with self.subTest(value=value):
+                settings = Settings.normalize({"bookmarkDeleteMode": value})
+                self.assertEqual(settings.bookmark_delete_mode, "ask")
 
     def test_bookmark_settings_are_normalised(self) -> None:
         settings = Settings.normalize(
@@ -129,6 +149,22 @@ class SettingsNormalizeTests(unittest.TestCase):
             Settings.normalize(payload),
             Settings(bookmark_sync_enabled=False, bookmark_custom_dir="D:\\Bookmarks"),
         )
+
+    def test_to_json_includes_bookmark_delete_mode(self) -> None:
+        payload = Settings(bookmark_delete_mode="remove").to_json()
+        self.assertEqual(payload["bookmarkDeleteMode"], "remove")
+        self.assertEqual(
+            Settings.normalize(payload),
+            Settings(bookmark_delete_mode="remove"),
+        )
+        # Every normalized mode survives the write/read round trip.
+        for value in DELETE_MODES:
+            with self.subTest(value=value):
+                payload = Settings(bookmark_delete_mode=value).to_json()
+                self.assertEqual(
+                    Settings.normalize(payload),
+                    Settings(bookmark_delete_mode=value),
+                )
 
     def test_non_bool_flags_are_ignored(self) -> None:
         settings = Settings.normalize(

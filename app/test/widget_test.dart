@@ -235,11 +235,20 @@ class FakeApi implements ResourceApi {
   }
 
   @override
-  Future<bool> delete(ViewMode mode, String id) async {
+  Future<DeleteOutcome> delete(
+    ViewMode mode,
+    String id, {
+    bool removeFromBrowser = false,
+  }) async {
     final List<ResourceItem> bucket = _bucket(mode);
     final int before = bucket.length;
     bucket.removeWhere((ResourceItem e) => e.id == id);
-    return bucket.length != before;
+    lastDeleteRemovedFromBrowser = removeFromBrowser;
+    return DeleteOutcome(
+      deleted: bucket.length != before,
+      browserQueued: removeFromBrowser,
+      extensionConnected: removeFromBrowser && extensionConnected,
+    );
   }
 
   @override
@@ -394,6 +403,23 @@ class FakeApi implements ResourceApi {
   @override
   Future<BookmarkStatus> loadBookmarkStatus() async => bookmarkStatus;
 
+  // -- Phase 18: extension + browser matches ------------------------------
+  bool extensionConnected = false;
+  List<BookmarkMatch> bookmarkMatchesResult = const <BookmarkMatch>[];
+  bool? lastDeleteRemovedFromBrowser;
+
+  @override
+  Future<List<BookmarkMatch>> bookmarkMatches(List<String> urls) async =>
+      bookmarkMatchesResult;
+
+  @override
+  Future<BookmarkExtensionStatus> loadBookmarkExtensionStatus() async =>
+      BookmarkExtensionStatus(
+        connected: extensionConnected,
+        port: extensionConnected ? 47821 : null,
+        extensionPath: extensionConnected ? r'C:\App\bookmark-extension' : '',
+      );
+
   /// Adds a link as if a bookmark had been imported, for event tests.
   void addBookmarkLink(ResourceItem item) => _links.add(item);
 
@@ -404,6 +430,18 @@ class FakeApi implements ResourceApi {
         'added': added,
         'lastSyncAt': '2026-10-18T07:10:00+08:00',
         'profiles': <dynamic>[],
+      }),
+    );
+  }
+
+  /// Simulates a reverse-sync event from the browser extension.
+  void emitBookmarkRemoved(int deleted, {int renamed = 0}) {
+    _events.add(
+      BackendEvent('bookmarks', <String, dynamic>{
+        'added': 0,
+        'deleted': deleted,
+        'renamed': renamed,
+        'lastSyncAt': '2026-10-18T07:20:00+08:00',
       }),
     );
   }
@@ -1513,6 +1551,63 @@ void main() {
     await tester.pumpAndSettle();
     expect(saved, isNotEmpty);
     expect(saved.last.bookmarkSyncEnabled, isFalse);
+  });
+
+  testWidgets('delete offers to remove the matching browser bookmark',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi()
+      ..bookmarkMatchesResult = const <BookmarkMatch>[
+        BookmarkMatch(
+          url: 'https://github.com',
+          title: 'GitHub',
+          label: 'Chrome · Default',
+        ),
+      ]
+      ..extensionConnected = true;
+    final List<AppSettings> saved = <AppSettings>[];
+    await pumpApp(
+      tester,
+      api: api,
+      onSettingsChanged: (AppSettings settings) async => saved.add(settings),
+    );
+
+    await tester.tap(find.text('网站'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('GitHub'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('删除'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('删除确认'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('delete-browser-checkbox')),
+        findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey<String>('delete-browser-checkbox')));
+    await tester.tap(find.byKey(const ValueKey<String>('delete-browser-remember')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
+    await tester.pumpAndSettle();
+
+    expect(api.lastDeleteRemovedFromBrowser, isTrue);
+    expect(saved.last.bookmarkDeleteMode, kBookmarkDeleteRemove);
+    expect(find.text('GitHub'), findsNothing);
+  });
+
+  testWidgets('a browser-side unbookmark removes the synced resource',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    api.emitBookmarkRemoved(1);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('浏览器端取消了 1 个收藏'), findsOneWidget);
+  });
+
+  testWidgets('settings reports the browser extension connection',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi()..extensionConnected = true;
+    await pumpApp(tester, api: api);
+    await openSettings(tester);
+    expect(find.textContaining('浏览器扩展：已连接'), findsOneWidget);
   });
 
   test('translation table keeps zh/en key parity', () {

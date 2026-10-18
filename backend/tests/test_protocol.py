@@ -2,17 +2,36 @@
 
 from __future__ import annotations
 
+import contextlib
+import http.client
 import io
 import json
 import os
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 from unittest import mock
 
+from resource_hub_core.bookmark_bridge import BookmarkBridge
 from resource_hub_core.bookmarks import BROWSER_DATA_DIRS_ENV
 from resource_hub_core.protocol import PROTOCOL_VERSION, JsonLinesServer
+
+
+def http_json(
+    port: int, method: str, path: str, payload: Any = None
+) -> tuple[int, dict[str, Any]]:
+    """One extension-style loopback request against a test bridge."""
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    try:
+        body = None if payload is None else json.dumps(payload, ensure_ascii=False)
+        headers = {"Content-Type": "application/json"} if body is not None else {}
+        connection.request(method, path, body=body, headers=headers)
+        response = connection.getresponse()
+        raw = response.read()
+        return response.status, (json.loads(raw.decode("utf-8")) if raw else {})
+    finally:
+        connection.close()
 
 
 class ProtocolTestCase(unittest.TestCase):
@@ -338,6 +357,7 @@ class SettingsTests(ProtocolTestCase):
         settings = self.call("settings.get")["result"]["settings"]
         self.assertIs(settings["bookmarkSyncEnabled"], True)
         self.assertEqual(settings["bookmarkCustomDir"], "")
+        self.assertEqual(settings["bookmarkDeleteMode"], "ask")
 
     def test_set_normalises_bookmark_settings(self) -> None:
         result = self.call(
@@ -346,15 +366,24 @@ class SettingsTests(ProtocolTestCase):
                 "settings": {
                     "bookmarkSyncEnabled": False,
                     "bookmarkCustomDir": "  D:\\Bookmarks  ",
+                    "bookmarkDeleteMode": "keep",
                 }
             },
         )["result"]["settings"]
         self.assertIs(result["bookmarkSyncEnabled"], False)
         self.assertEqual(result["bookmarkCustomDir"], "D:\\Bookmarks")
+        self.assertEqual(result["bookmarkDeleteMode"], "keep")
 
         persisted = json.loads((self.dir / "settings.json").read_text(encoding="utf-8"))
         self.assertIs(persisted["bookmarkSyncEnabled"], False)
         self.assertEqual(persisted["bookmarkCustomDir"], "D:\\Bookmarks")
+        self.assertEqual(persisted["bookmarkDeleteMode"], "keep")
+
+    def test_set_normalises_an_invalid_bookmark_delete_mode(self) -> None:
+        result = self.call(
+            "settings.set", {"settings": {"bookmarkDeleteMode": "delete-everything"}}
+        )["result"]["settings"]
+        self.assertEqual(result["bookmarkDeleteMode"], "ask")
 
 
 class BookmarkBridgeTests(ProtocolTestCase):
@@ -580,6 +609,293 @@ class BookmarkBridgeTests(ProtocolTestCase):
             server.serve_forever()
 
         start.assert_not_called()
+
+
+class ExtensionBridgeProtocolTests(ProtocolTestCase):
+    """Phase 18: extension status, bookmark matches and the browser removal queue."""
+
+    @contextlib.contextmanager
+    def _running_server(self) -> Iterator[JsonLinesServer]:
+        """A server with the bookmark startup pass and the loopback bridge up."""
+        server = JsonLinesServer(
+            self.dir, in_stream=io.StringIO(""), out_stream=io.StringIO()
+        )
+        server._start_bookmarks()
+        server._start_bridge()
+        try:
+            yield server
+        finally:
+            server._shutdown()
+
+    def test_hello_lists_the_extension_methods(self) -> None:
+        methods = self.call("app.hello")["result"]["methods"]
+        self.assertIn("bookmarks.extensionStatus", methods)
+        self.assertIn("bookmarks.matches", methods)
+        # The list stays sorted (the UI diffs it when it refreshes).
+        self.assertEqual(methods, sorted(methods))
+
+    def test_extension_status_on_a_fresh_server(self) -> None:
+        with self._running_server() as server:
+            status = server.dispatcher.dispatch("bookmarks.extensionStatus", {})
+
+        self.assertFalse(status["connected"])
+        self.assertIsNone(status["lastSeenAt"])
+        self.assertIsInstance(status["port"], int)
+        self.assertEqual(status["pendingCommands"], 0)
+        self.assertEqual(
+            status["extensionPath"], str(self.dir / "bookmark-extension")
+        )
+
+    def test_extension_status_is_disconnected_without_a_bridge(self) -> None:
+        out = io.StringIO()
+        server = JsonLinesServer(self.dir, in_stream=io.StringIO(""), out_stream=out)
+        result = server.dispatcher.dispatch("bookmarks.extensionStatus", {})
+        self.assertFalse(result["connected"])
+        self.assertIsNone(result["port"])
+        self.assertEqual(result["pendingCommands"], 0)
+
+    def test_ping_marks_the_extension_connected(self) -> None:
+        with self._running_server() as server:
+            bridge = server.state.bookmark_bridge
+            self.assertIsInstance(bridge, BookmarkBridge)
+            assert bridge is not None
+
+            status, payload = http_json(bridge.port or 0, "GET", "/ping")
+            self.assertEqual(status, 200)
+            self.assertEqual(payload, {"app": "resource-hub", "protocol": 1})
+
+            result = server.dispatcher.dispatch("bookmarks.extensionStatus", {})
+            self.assertTrue(result["connected"])
+            self.assertEqual(result["lastSeenAt"], bridge.last_seen_iso)
+            self.assertEqual(result["port"], bridge.port)
+
+    def test_delete_link_with_remove_from_browser_queues_a_command(self) -> None:
+        with self._running_server() as server:
+            added = server.dispatcher.dispatch(
+                "resources.add",
+                {"mode": "links", "name": "Gone", "target": "https://gone.example/x"},
+            )["item"]
+
+            result = server.dispatcher.dispatch(
+                "resources.delete",
+                {"mode": "links", "id": added["id"], "removeFromBrowser": True},
+            )
+
+            self.assertTrue(result["deleted"])
+            self.assertTrue(result["browserQueued"])
+            self.assertFalse(result["extensionConnected"])
+
+            status = server.dispatcher.dispatch("bookmarks.extensionStatus", {})
+            self.assertEqual(status["pendingCommands"], 1)
+
+            # Act like the extension: poll, then acknowledge.
+            code, payload = http_json(bridge_port(server), "GET", "/commands")
+            self.assertEqual(code, 200)
+            commands = payload["commands"]
+            self.assertEqual(len(commands), 1)
+            self.assertEqual(commands[0]["op"], "remove")
+            self.assertEqual(commands[0]["urls"], ["https://gone.example/x"])
+            self.assertIsInstance(commands[0]["createdAt"], str)
+
+            code, ack = http_json(
+                bridge_port(server),
+                "POST",
+                "/ack",
+                {"results": [{"id": commands[0]["id"], "removed": 1, "failed": 0}]},
+            )
+            self.assertEqual(code, 200)
+            self.assertEqual(ack, {"ok": True})
+
+            status = server.dispatcher.dispatch("bookmarks.extensionStatus", {})
+            self.assertEqual(status["pendingCommands"], 0)
+            # Polling marked the extension alive, so the next delete can report it.
+            self.assertTrue(status["connected"])
+
+    def test_delete_without_remove_from_browser_queues_nothing(self) -> None:
+        with self._running_server() as server:
+            added = server.dispatcher.dispatch(
+                "resources.add",
+                {"mode": "links", "name": "Local", "target": "https://local.example/"},
+            )["item"]
+
+            result = server.dispatcher.dispatch(
+                "resources.delete", {"mode": "links", "id": added["id"]}
+            )
+
+            self.assertTrue(result["deleted"])
+            self.assertFalse(result["browserQueued"])
+            self.assertFalse(result["extensionConnected"])
+            self.assertEqual(
+                server.dispatcher.dispatch(
+                    "bookmarks.extensionStatus", {}
+                )["pendingCommands"],
+                0,
+            )
+
+    def test_delete_folder_never_queues_a_browser_command(self) -> None:
+        target = self.dir / "some-folder"
+        target.mkdir()
+        with self._running_server() as server:
+            added = server.dispatcher.dispatch(
+                "resources.add",
+                {"mode": "folders", "name": "F", "target": str(target)},
+            )["item"]
+
+            result = server.dispatcher.dispatch(
+                "resources.delete",
+                {"mode": "folders", "id": added["id"], "removeFromBrowser": True},
+            )
+
+            self.assertTrue(result["deleted"])
+            self.assertFalse(result["browserQueued"])
+            self.assertFalse(result["extensionConnected"])
+            bridge = server.state.bookmark_bridge
+            assert bridge is not None
+            self.assertEqual(bridge.pending_count(), 0)
+
+    def test_delete_unknown_link_with_remove_from_browser_is_a_noop(self) -> None:
+        with self._running_server() as server:
+            result = server.dispatcher.dispatch(
+                "resources.delete",
+                {"mode": "links", "id": "missing", "removeFromBrowser": True},
+            )
+            self.assertFalse(result["deleted"])
+            self.assertFalse(result["browserQueued"])
+            bridge = server.state.bookmark_bridge
+            assert bridge is not None
+            self.assertEqual(bridge.pending_count(), 0)
+
+    def test_delete_without_a_running_bridge_keeps_flags_false(self) -> None:
+        server = JsonLinesServer(
+            self.dir, in_stream=io.StringIO(""), out_stream=io.StringIO()
+        )
+        server._start_bookmarks()
+        try:
+            added = server.dispatcher.dispatch(
+                "resources.add",
+                {"mode": "links", "name": "NoBridge", "target": "https://x.example/"},
+            )["item"]
+            result = server.dispatcher.dispatch(
+                "resources.delete",
+                {"mode": "links", "id": added["id"], "removeFromBrowser": True},
+            )
+        finally:
+            server._shutdown()
+
+        self.assertTrue(result["deleted"])
+        self.assertFalse(result["browserQueued"])
+        self.assertFalse(result["extensionConnected"])
+        self.assertIsNone(server.state.bookmark_bridge)
+
+    def test_bookmarks_matches_reads_the_browser_profiles(self) -> None:
+        root = self.dir / "Chrome"
+        profile = root / "Default"
+        profile.mkdir(parents=True)
+        (profile / "Bookmarks").write_text(
+            json.dumps(
+                {
+                    "roots": {
+                        "bookmark_bar": {
+                            "type": "folder",
+                            "name": "bar",
+                            "children": [
+                                {"type": "url", "name": "Home", "url": "https://home.example/"},
+                                {
+                                    "type": "folder",
+                                    "name": "开发",
+                                    "children": [
+                                        {
+                                            "type": "url",
+                                            "name": "PyPI",
+                                            "url": "https://pypi.org/",
+                                        }
+                                    ],
+                                },
+                            ],
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        os.environ[BROWSER_DATA_DIRS_ENV] = str(root)
+
+        result = next(
+            frame
+            for frame in self.run_frames(
+                [
+                    {
+                        "id": 1,
+                        "method": "bookmarks.matches",
+                        "params": {
+                            "urls": ["https://HOME.example", "https://nope.example/"]
+                        },
+                    }
+                ]
+            )
+            if frame.get("id") == 1
+        )["result"]
+
+        self.assertEqual(len(result["matches"]), 1)
+        match = result["matches"][0]
+        self.assertEqual(match["url"], "https://home.example/")
+        self.assertEqual(match["title"], "Home")
+        self.assertEqual(match["label"], "Chrome · Default")
+        self.assertEqual(match["path"], "书签栏")
+
+    def test_bookmarks_matches_returns_empty_for_no_input_or_profiles(self) -> None:
+        self.assertEqual(self.call("bookmarks.matches", {"urls": []})["result"],
+                         {"matches": []})
+        self.assertEqual(self.call("bookmarks.matches", {})["result"],
+                         {"matches": []})
+        self.assertEqual(
+            self.call("bookmarks.matches", {"urls": ["https://a.example/"]})["result"],
+            {"matches": []},
+        )
+
+    def test_bookmarks_matches_rejects_a_non_string_list(self) -> None:
+        frame = self.call("bookmarks.matches", {"urls": "https://a.example/"})
+        self.assertFalse(frame["ok"])
+        self.assertEqual(frame["error"]["code"], "bad_request")
+
+    def test_serve_forever_starts_and_stops_the_bridge(self) -> None:
+        server = JsonLinesServer(
+            self.dir, in_stream=io.StringIO(""), out_stream=io.StringIO()
+        )
+        ports: list[int] = []
+        original_start = server._start_bridge
+
+        def spy_start() -> None:
+            original_start()
+            bridge = server.state.bookmark_bridge
+            if bridge is not None and bridge.port is not None:
+                ports.append(bridge.port)
+
+        server._start_bridge = spy_start  # type: ignore[method-assign]
+        server.serve_forever()
+
+        # The finally-path stopped it and released the port.
+        self.assertIsNone(server.state.bookmark_bridge)
+        self.assertEqual(len(ports), 1)
+        with self.assertRaises(OSError):
+            http_json(ports[0], "GET", "/ping")
+
+    def test_bridge_is_not_started_on_corrupt_data(self) -> None:
+        (self.dir / "sites.json").write_text("[broken", encoding="utf-8")
+        (self.dir / "folders.json").write_text("[]", encoding="utf-8")
+        server = JsonLinesServer(
+            self.dir, in_stream=io.StringIO(""), out_stream=io.StringIO()
+        )
+        server.serve_forever()
+        self.assertIsNone(server.state.bookmark_bridge)
+
+
+def bridge_port(server: JsonLinesServer) -> int:
+    """The running bridge's port as an int (fails the test when absent)."""
+    bridge = server.state.bookmark_bridge
+    if bridge is None or bridge.port is None:
+        raise AssertionError("bookmark bridge is not running")
+    return bridge.port
 
 
 class ErrorMappingTests(ProtocolTestCase):

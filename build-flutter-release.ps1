@@ -99,6 +99,14 @@ Copy-Item -Path (Join-Path $flutterRelease "*") -Destination $out -Recurse -Forc
 New-Item -ItemType Directory -Path (Join-Path $out "backend") -Force | Out-Null
 Copy-Item -Path (Join-Path $backendDist "*") -Destination (Join-Path $out "backend") -Recurse -Force
 
+# Phase 18: unpacked browser extension (Chrome / Edge, loaded via developer mode).
+$extensionSource = Join-Path $root "bookmark-extension"
+if (Test-Path $extensionSource) {
+    $extensionOut = Join-Path $out "bookmark-extension"
+    New-Item -ItemType Directory -Path $extensionOut -Force | Out-Null
+    Copy-Item -Path (Join-Path $extensionSource "*") -Destination $extensionOut -Recurse -Force
+}
+
 $readme = @"
 Resource Hub Desktop
 ====================
@@ -122,6 +130,8 @@ settings.json        语言、主题、全局快捷键、开机启动
   Ctrl + Alt + Shift + F 文件夹树；同样可在设置里录制修改。
 * 浏览器书签同步：只读本机 Chrome / Edge 书签，新收藏会自动加入网站列表（设置里可关，
   也可指定自定义书签目录）。
+* 双向书签同步（可选）：要用「工具里删除 → 浏览器也取消收藏」，请按 bookmark-extension\README.md
+  在 Chrome/Edge 开发者模式加载扩展（一次性，两边各一次）。
 * 开机启动由设置里的开关创建/删除“启动”文件夹快捷方式（静默进托盘）。
 * 导入/导出使用 JSON 备份文件，格式与原 Python 版完全兼容。
 "@

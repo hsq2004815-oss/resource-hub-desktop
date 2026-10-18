@@ -40,7 +40,11 @@ abstract interface class ResourceApi {
     String? note,
   });
 
-  Future<bool> delete(ViewMode mode, String id);
+  Future<DeleteOutcome> delete(
+    ViewMode mode,
+    String id, {
+    bool removeFromBrowser = false,
+  });
 
   Future<ResourceItem> setFavorite(ViewMode mode, String id, {bool? value});
 
@@ -92,6 +96,12 @@ abstract interface class ResourceApi {
 
   /// Watched browser profiles and the last bookmark sync state.
   Future<BookmarkStatus> loadBookmarkStatus();
+
+  /// Browser bookmarks whose URL matches one of [urls] (read-only, Phase 18).
+  Future<List<BookmarkMatch>> bookmarkMatches(List<String> urls);
+
+  /// Whether the browser extension is connected (Phase 18).
+  Future<BookmarkExtensionStatus> loadBookmarkExtensionStatus();
 
   /// Whether [hotkeyId] can be registered right now.
   Future<bool> probeHotkey(String hotkeyId);

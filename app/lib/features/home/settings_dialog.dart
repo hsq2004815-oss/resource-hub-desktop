@@ -37,6 +37,8 @@ class SettingsDialog extends StatefulWidget {
     this.onLoadBookmarkStatus,
     this.onSyncBookmarks,
     this.onPickBookmarkDir,
+    this.onLoadExtensionStatus,
+    this.onOpenExtensionFolder,
   });
 
   final AppLanguage language;
@@ -61,6 +63,12 @@ class SettingsDialog extends StatefulWidget {
   /// Phase 17: choose a custom browser data directory.
   final Future<String?> Function()? onPickBookmarkDir;
 
+  /// Phase 18: browser-extension connection state.
+  final Future<BookmarkExtensionStatus?> Function()? onLoadExtensionStatus;
+
+  /// Phase 18: open the shipped `bookmark-extension` folder in Explorer.
+  final Future<void> Function(String path)? onOpenExtensionFolder;
+
   @override
   State<SettingsDialog> createState() => _SettingsDialogState();
 }
@@ -73,6 +81,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
   String? _hotkeyError;
 
   BookmarkStatus? _bookmarkStatus;
+  BookmarkExtensionStatus? _extensionStatus;
   bool _bookmarkStatusLoading = false;
   bool _bookmarkSyncing = false;
   String? _bookmarkResult;
@@ -87,6 +96,20 @@ class _SettingsDialogState extends State<SettingsDialog> {
   void initState() {
     super.initState();
     unawaited(_loadBookmarkStatus());
+    unawaited(_loadExtensionStatus());
+  }
+
+  Future<void> _loadExtensionStatus() async {
+    final Future<BookmarkExtensionStatus?> Function()? loader =
+        widget.onLoadExtensionStatus;
+    if (loader == null) {
+      return;
+    }
+    final BookmarkExtensionStatus? status = await loader();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _extensionStatus = status);
   }
 
   Future<void> _loadBookmarkStatus() async {
@@ -131,6 +154,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
             ]);
     });
     await _loadBookmarkStatus();
+    await _loadExtensionStatus();
   }
 
   Future<void> _pickBookmarkDir() async {
@@ -464,6 +488,85 @@ class _SettingsDialogState extends State<SettingsDialog> {
                   : () => unawaited(_syncBookmarksNow()),
             ),
           ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                t.tx('settings_bookmarks_delete_mode'),
+                style: text.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xxs),
+        SegmentedButton<String>(
+          key: const ValueKey<String>('bookmark-delete-mode'),
+          showSelectedIcon: false,
+          segments: <ButtonSegment<String>>[
+            ButtonSegment<String>(
+              value: kBookmarkDeleteAsk,
+              label: Text(t.tx('settings_bookmarks_delete_ask')),
+            ),
+            ButtonSegment<String>(
+              value: kBookmarkDeleteRemove,
+              label: Text(t.tx('settings_bookmarks_delete_remove')),
+            ),
+            ButtonSegment<String>(
+              value: kBookmarkDeleteKeep,
+              label: Text(t.tx('settings_bookmarks_delete_keep')),
+            ),
+          ],
+          selected: <String>{_settings.bookmarkDeleteMode},
+          onSelectionChanged: (Set<String> value) => unawaited(
+            _apply(_settings.copyWith(bookmarkDeleteMode: value.first)),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Row(
+          children: <Widget>[
+            Icon(
+              _extensionStatus?.connected == true
+                  ? Icons.extension
+                  : Icons.extension_off_outlined,
+              size: 15,
+              color: _extensionStatus?.connected == true
+                  ? scheme.primary
+                  : scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: Text(
+                _extensionStatus?.connected == true
+                    ? t.tx('settings_bookmarks_extension_connected')
+                    : t.tx('settings_bookmarks_extension_disconnected'),
+                style: text.bodySmall?.copyWith(
+                  color: _extensionStatus?.connected == true
+                      ? scheme.primary
+                      : scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            if ((_extensionStatus?.extensionPath ?? '').isNotEmpty &&
+                widget.onOpenExtensionFolder != null)
+              AppButton(
+                label: t.tx('settings_bookmarks_extension_folder'),
+                icon: Icons.folder_open_outlined,
+                variant: AppButtonVariant.secondary,
+                compact: true,
+                onPressed: () => unawaited(
+                  widget.onOpenExtensionFolder!(_extensionStatus!.extensionPath),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xxs),
+        Text(
+          t.tx('settings_bookmarks_extension_hint'),
+          style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
         ),
         if (_bookmarkResult != null) ...<Widget>[
           const SizedBox(height: AppSpacing.xs),

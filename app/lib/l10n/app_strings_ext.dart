@@ -101,6 +101,21 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
     'settings_bookmarks_sync_now': '立即同步',
     'settings_bookmarks_syncing': '正在同步…',
     'settings_bookmarks_result': '新增 {0} 个，跳过 {1} 个',
+    'delete_browser_option': '同时从浏览器移除（{0} 处书签收藏）',
+    'delete_browser_remember': '记住我的选择',
+    'delete_browser_removed': '已删除，并从浏览器移除了收藏',
+    'delete_browser_queued': '已删除；浏览器扩展未连接，连接后会自动移除对应书签',
+    'delete_browser_failed': '已删除；但未能通知浏览器扩展，书签可能仍在浏览器中',
+    'bookmark_deleted_by_browser': '浏览器端取消了 {0} 个收藏，已从工具中移除',
+    'bookmark_renamed_by_browser': '浏览器端更新了 {0} 个书签名称',
+    'settings_bookmarks_delete_mode': '删除同步资源时',
+    'settings_bookmarks_delete_ask': '每次询问',
+    'settings_bookmarks_delete_remove': '同时移除书签',
+    'settings_bookmarks_delete_keep': '仅删本地',
+    'settings_bookmarks_extension_connected': '浏览器扩展：已连接',
+    'settings_bookmarks_extension_disconnected': '浏览器扩展：未连接',
+    'settings_bookmarks_extension_hint': '在 Chrome / Edge 扩展页打开开发者模式，加载随包的 bookmark-extension 文件夹，即可双向同步（删除/改名）。',
+    'settings_bookmarks_extension_folder': '打开扩展目录',
   },
   'en': <String, String>{
     'settings_theme': 'Appearance',
@@ -196,6 +211,25 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
     'settings_bookmarks_sync_now': 'Sync now',
     'settings_bookmarks_syncing': 'Syncing…',
     'settings_bookmarks_result': '{0} added, {1} skipped',
+    'delete_browser_option': 'Also remove {0} browser bookmark(s)',
+    'delete_browser_remember': 'Remember my choice',
+    'delete_browser_removed': 'Deleted locally and removed the browser bookmark',
+    'delete_browser_queued':
+        'Deleted; the browser extension is offline, the bookmark will be removed when it connects',
+    'delete_browser_failed':
+        'Deleted; could not notify the browser extension, the bookmark may still exist',
+    'bookmark_deleted_by_browser':
+        '{0} bookmark(s) were unbookmarked in the browser and removed here',
+    'bookmark_renamed_by_browser': '{0} bookmark name(s) updated from the browser',
+    'settings_bookmarks_delete_mode': 'When deleting synced resources',
+    'settings_bookmarks_delete_ask': 'Ask each time',
+    'settings_bookmarks_delete_remove': 'Also remove bookmark',
+    'settings_bookmarks_delete_keep': 'Local only',
+    'settings_bookmarks_extension_connected': 'Browser extension: connected',
+    'settings_bookmarks_extension_disconnected': 'Browser extension: not connected',
+    'settings_bookmarks_extension_hint':
+        'Open the extensions page in Chrome / Edge, enable Developer mode and load the shipped bookmark-extension folder for two-way delete/rename sync.',
+    'settings_bookmarks_extension_folder': 'Open extension folder',
   },
 };
 

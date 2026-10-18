@@ -15,6 +15,7 @@ import 'package:flutter/services.dart';
 
 import '../../data/backend_models.dart';
 import '../../data/resource_api.dart';
+import '../../design/app_tokens.dart';
 import '../../l10n/app_strings_ext.dart';
 import '../../l10n/strings_scope.dart';
 import '../../models/resource_item.dart';
@@ -215,20 +216,44 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // -- browser bookmark sync (Phase 17) -----------------------------------
+  // -- browser bookmark sync (Phase 17/18) ---------------------------------
   Future<void> _handleBookmarkEvent(Map<String, dynamic> payload) async {
     final int added = (payload['added'] as num?)?.toInt() ?? 0;
+    final int deleted = (payload['deleted'] as num?)?.toInt() ?? 0;
+    final int renamed = (payload['renamed'] as num?)?.toInt() ?? 0;
     await _reload(ViewMode.links);
-    if (!mounted || added <= 0 || _bookmarkSyncInFlight) {
+    if (!mounted) {
       return;
     }
-    _setStatus(
-      _Status(
-        key: 'bookmark_sync_auto',
-        args: <Object?>[added],
-        tone: StatusTone.success,
-      ),
-    );
+    if (deleted > 0) {
+      _setStatus(
+        _Status(
+          key: 'bookmark_deleted_by_browser',
+          args: <Object?>[deleted],
+          tone: StatusTone.success,
+        ),
+      );
+      return;
+    }
+    if (renamed > 0) {
+      _setStatus(
+        _Status(
+          key: 'bookmark_renamed_by_browser',
+          args: <Object?>[renamed],
+          tone: StatusTone.success,
+        ),
+      );
+      return;
+    }
+    if (added > 0 && !_bookmarkSyncInFlight) {
+      _setStatus(
+        _Status(
+          key: 'bookmark_sync_auto',
+          args: <Object?>[added],
+          tone: StatusTone.success,
+        ),
+      );
+    }
   }
 
   Future<void> _syncBookmarks() async {
@@ -297,7 +322,30 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<BookmarkExtensionStatus?> _loadBookmarkExtensionStatus() async {
+    try {
+      return await _repo.loadBookmarkExtensionStatus();
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<String?> _pickBookmarkDir() => NativeShell.pickFolder();
+
+  /// Settings-dialog "open the shipped extension folder" action.
+  Future<void> _openExtensionFolder(String path) async {
+    if (path.isEmpty) {
+      return;
+    }
+    final bool handled = await NativeShell.openTarget(path);
+    if (!handled) {
+      try {
+        await _repo.openPath(path);
+      } catch (_) {
+        // The folder may not exist in a dev checkout; nothing to open.
+      }
+    }
+  }
 
   /// Ctrl+Alt+Space. While the quick panel is up it expands to the full window
   /// instead of toggling the window off.
@@ -1042,31 +1090,128 @@ class _HomePageState extends State<HomePage> {
       );
       return;
     }
-    final AppStrings strings = context.l10n;
+    // Phase 18: a links resource may also live as a Chrome/Edge bookmark. Look
+    // it up (read-only) so the confirm dialog can offer to remove it too.
+    final List<BookmarkMatch> matches = _mode.isLinks
+        ? await _repo.bookmarkMatches(<String>[item.path])
+        : const <BookmarkMatch>[];
+    if (!mounted) {
+      return;
+    }
+    final String deleteMode = widget.settings.bookmarkDeleteMode;
+    bool removeBookmark = matches.isNotEmpty &&
+        deleteMode == kBookmarkDeleteRemove;
+    bool rememberChoice = false;
     final bool? confirmed = await showDialog<bool>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
-        title: Text(strings.t('confirm_delete_title')),
-        content: Text(strings.t('confirm_delete_body', <Object?>[item.name])),
-        actions: <Widget>[
-          AppButton(
-            label: strings.t('settings_cancel'),
-            variant: AppButtonVariant.ghost,
-            onPressed: () => Navigator.of(context).pop(false),
-          ),
-          AppButton(
-            label: strings.t('delete'),
-            variant: AppButtonVariant.danger,
-            onPressed: () => Navigator.of(context).pop(true),
-          ),
-        ],
-      ),
+      builder: (BuildContext dialogContext) {
+        final AppStrings dialogStrings = dialogContext.l10n;
+        return StatefulBuilder(
+          builder: (
+            BuildContext context,
+            StateSetter setDialogState,
+          ) {
+            final bool lockedChoice =
+                matches.isNotEmpty && deleteMode != kBookmarkDeleteAsk;
+            if (lockedChoice) {
+              removeBookmark = deleteMode == kBookmarkDeleteRemove;
+            }
+            return AlertDialog(
+              title: Text(dialogStrings.t('confirm_delete_title')),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(dialogStrings.t('confirm_delete_body', <Object?>[item.name])),
+                  if (matches.isNotEmpty) ...<Widget>[
+                    const SizedBox(height: AppSpacing.sm),
+                    CheckboxListTile(
+                      key: const ValueKey<String>('delete-browser-checkbox'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      value: removeBookmark,
+                      onChanged: lockedChoice
+                          ? null
+                          : (bool? value) => setDialogState(
+                                () => removeBookmark = value ?? false,
+                              ),
+                      title: Text(
+                        dialogStrings.tx(
+                          'delete_browser_option',
+                          <Object?>[matches.length],
+                        ),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      subtitle: Text(
+                        matches
+                            .map((BookmarkMatch match) =>
+                                match.label.isEmpty ? match.title : match.label)
+                            .where((String label) => label.isNotEmpty)
+                            .toSet()
+                            .join('、'),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                      ),
+                    ),
+                    if (!lockedChoice)
+                      CheckboxListTile(
+                        key: const ValueKey<String>('delete-browser-remember'),
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        value: rememberChoice,
+                        onChanged: (bool? value) => setDialogState(
+                          () => rememberChoice = value ?? false,
+                        ),
+                        title: Text(
+                          dialogStrings.tx('delete_browser_remember'),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+              actions: <Widget>[
+                AppButton(
+                  label: dialogStrings.t('settings_cancel'),
+                  variant: AppButtonVariant.ghost,
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                ),
+                AppButton(
+                  label: dialogStrings.t('delete'),
+                  variant: AppButtonVariant.danger,
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
     if (confirmed != true) {
       return;
     }
+    final bool removeFromBrowser = matches.isNotEmpty && removeBookmark;
+    if (rememberChoice && matches.isNotEmpty) {
+      final String nextMode =
+          removeFromBrowser ? kBookmarkDeleteRemove : kBookmarkDeleteKeep;
+      if (nextMode != widget.settings.bookmarkDeleteMode) {
+        await widget.onSettingsChanged(
+          widget.settings.copyWith(bookmarkDeleteMode: nextMode),
+        );
+        if (!mounted) {
+          return;
+        }
+      }
+    }
     try {
-      await _repo.delete(_mode, item.id);
+      final DeleteOutcome outcome = await _repo.delete(
+        _mode,
+        item.id,
+        removeFromBrowser: removeFromBrowser,
+      );
       await _reload(_mode);
       if (!mounted) {
         return;
@@ -1075,12 +1220,28 @@ class _HomePageState extends State<HomePage> {
         _selectedId = null;
         _detailOpen = false;
       });
-      _setStatus(
-        _Status(
-          key: _mode.isLinks ? 'link_deleted' : 'folder_deleted',
-          tone: StatusTone.success,
-        ),
-      );
+      if (removeFromBrowser) {
+        final String key;
+        final StatusTone tone;
+        if (outcome.browserQueued && outcome.extensionConnected) {
+          key = 'delete_browser_removed';
+          tone = StatusTone.success;
+        } else if (outcome.browserQueued) {
+          key = 'delete_browser_queued';
+          tone = StatusTone.info;
+        } else {
+          key = 'delete_browser_failed';
+          tone = StatusTone.warning;
+        }
+        _setStatus(_Status(key: key, tone: tone));
+      } else {
+        _setStatus(
+          _Status(
+            key: _mode.isLinks ? 'link_deleted' : 'folder_deleted',
+            tone: StatusTone.success,
+          ),
+        );
+      }
     } on BackendException catch (error) {
       _setStatus(_Status.fromError(error));
     }
@@ -1290,6 +1451,8 @@ class _HomePageState extends State<HomePage> {
         onLoadBookmarkStatus: _loadBookmarkStatus,
         onSyncBookmarks: _syncBookmarksForDialog,
         onPickBookmarkDir: _pickBookmarkDir,
+        onLoadExtensionStatus: _loadBookmarkExtensionStatus,
+        onOpenExtensionFolder: _openExtensionFolder,
       ),
     );
   }

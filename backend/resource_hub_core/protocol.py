@@ -43,7 +43,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, IO, Mapping
 
-from .bookmarks import BookmarkSyncEngine, BookmarkWatcher
+from .bookmark_bridge import BookmarkBridge
+from .bookmarks import BookmarkSyncEngine, BookmarkWatcher, dedup_key
 from .fs import list_children, open_fs_path, reveal_fs_path
 from .hotkey import GlobalHotkeyListener, is_combination_available
 from .launcher import open_link, open_path, reveal_path
@@ -136,6 +137,9 @@ class ServerState:
     #: background import can never interleave with a user-triggered write.
     bookmark_lock: threading.RLock = field(default_factory=threading.RLock)
     bookmark_watcher: BookmarkWatcher | None = None
+    #: Loopback HTTP server the browser extension talks to (Phase 18); ``None``
+    #: when it is not running (corrupt data, bind failure, after shutdown).
+    bookmark_bridge: BookmarkBridge | None = None
     hotkey: list[GlobalHotkeyListener] = field(default_factory=list)
 
 
@@ -150,6 +154,8 @@ class Dispatcher:
             "app.shutdown": self._shutdown,
             "bookmarks.status": self._bookmarks_status,
             "bookmarks.sync": self._bookmarks_sync,
+            "bookmarks.extensionStatus": self._bookmarks_extension_status,
+            "bookmarks.matches": self._bookmarks_matches,
             "resources.list": self._list,
             "resources.add": self._add,
             "resources.update": self._update,
@@ -223,6 +229,7 @@ class Dispatcher:
     def _shutdown(self, params: Mapping[str, Any]) -> dict[str, Any]:
         self.stop_hotkey()
         self.stop_bookmarks()
+        self.stop_bridge()
         return {"shutdown": True}
 
     # -- bookmarks ---------------------------------------------------------
@@ -240,6 +247,55 @@ class Dispatcher:
             # open window consistent, including one that did not send the call.
             self.writer.event("bookmarks", bookmark_event_payload(result))
         return result
+
+    def _bookmarks_extension_status(
+        self, params: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Snapshot for the "browser extension" row in the settings panel."""
+        bridge = self.state.bookmark_bridge
+        return {
+            "connected": bridge is not None and bridge.connected,
+            "lastSeenAt": bridge.last_seen_iso if bridge is not None else None,
+            "port": bridge.port if bridge is not None else None,
+            "pendingCommands": bridge.pending_count() if bridge is not None else 0,
+            # The folder the release bundles next to the exe; the UI opens it
+            # for "load unpacked" instead of making the user find it.
+            "extensionPath": str(self.state.base_dir / "bookmark-extension"),
+        }
+
+    def _bookmarks_matches(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        """Read-only lookup of browser bookmarks by URL (Phase 18).
+
+        Used when the UI already knows a resource URL and wants to offer "also
+        remove the browser bookmark". Matching is by ``dedup_key`` so scheme
+        case and trailing slashes do not matter; the collection is re-read from
+        the browser files, never modified.
+        """
+        raw_urls = params.get("urls")
+        if raw_urls is None:
+            return {"matches": []}
+        if not isinstance(raw_urls, list) or not all(
+            isinstance(url, str) for url in raw_urls
+        ):
+            raise ProtocolError(
+                "bad_request", "params.urls must be an array of strings"
+            )
+        wanted = {dedup_key(url) for url in raw_urls if url.strip()}
+        if not wanted:
+            return {"matches": []}
+        collection = self.state.bookmark_engine.collect(self.state.settings)
+        matches = [
+            {
+                "url": url,
+                "title": name,
+                "label": label,
+                # Chrome folder path is the import category ("开发/工具").
+                "path": category,
+            }
+            for label, name, url, category in collection.entries
+            if dedup_key(url) in wanted
+        ]
+        return {"matches": matches}
 
     # -- resources ---------------------------------------------------------
     def _list(self, params: Mapping[str, Any]) -> dict[str, Any]:
@@ -293,8 +349,35 @@ class Dispatcher:
     def _delete(self, params: Mapping[str, Any]) -> dict[str, Any]:
         self._require_loaded()
         mode = self._require_mode(params)
-        deleted = self.state.service.delete(mode, self._require_str(params, "id"))
-        return {"deleted": deleted}
+        item_id = self._require_str(params, "id")
+        remove_from_browser = params.get("removeFromBrowser") is True
+        item = None
+        if remove_from_browser and mode == "links":
+            # Look the item up first: deleting an unknown id is a no-op, but
+            # the extension needs the target of an item that really exists.
+            try:
+                item = self.state.service.get(mode, item_id)
+            except NotFoundError:
+                item = None
+        deleted = self.state.service.delete(mode, item_id)
+
+        browser_queued = False
+        extension_connected = False
+        if mode == "links":
+            bridge = self.state.bookmark_bridge
+            if bridge is not None:
+                extension_connected = bridge.connected
+                if deleted and remove_from_browser and item is not None:
+                    # Queue the exact stored URL: the extension searches its
+                    # bookmark tree for it, so a lowercased key could miss a
+                    # bookmark whose path contains uppercase characters.
+                    bridge.enqueue_remove([item.target])
+                    browser_queued = True
+        return {
+            "deleted": deleted,
+            "browserQueued": browser_queued,
+            "extensionConnected": extension_connected,
+        }
 
     def _favorite(self, params: Mapping[str, Any]) -> dict[str, Any]:
         self._require_loaded()
@@ -482,6 +565,13 @@ class Dispatcher:
         if watcher is not None:
             watcher.stop()
 
+    def stop_bridge(self) -> None:
+        """Stop the loopback extension bridge (safe to call more than once)."""
+        bridge = self.state.bookmark_bridge
+        self.state.bookmark_bridge = None
+        if bridge is not None:
+            bridge.stop()
+
 
 class JsonLinesServer:
     """Reads requests from ``in_stream``, writes frames to ``out_stream``."""
@@ -522,6 +612,7 @@ class JsonLinesServer:
     # -- loop --------------------------------------------------------------
     def serve_forever(self) -> int:
         self._start_bookmarks()
+        self._start_bridge()
         try:
             for raw_line in self._in:
                 line = raw_line.strip()
@@ -568,6 +659,26 @@ class JsonLinesServer:
         )
         state.bookmark_watcher = watcher
         watcher.start()
+
+    def _start_bridge(self) -> None:
+        """Start the loopback HTTP bridge the browser extension polls (Phase 18).
+
+        Corrupt data files mean the service cannot be mutated, so the bridge is
+        not started: reverse-sync events would have nothing safe to act on. A
+        bind failure is not fatal either — bookmark import keeps working, the UI
+        simply reports the extension as unreachable.
+        """
+        state = self.state
+        if state.load_error is not None or state.bookmark_bridge is not None:
+            return
+        bridge = BookmarkBridge(
+            state.service,
+            state.bookmark_engine,
+            writer=self.writer,
+            lock=state.bookmark_lock,
+        )
+        if bridge.start():
+            state.bookmark_bridge = bridge
 
     def _handle_line(self, line: str) -> bool:
         try:
@@ -632,6 +743,7 @@ class JsonLinesServer:
         return True
 
     def _shutdown(self) -> None:
+        self.dispatcher.stop_bridge()
         self.dispatcher.stop_hotkey()
         self.dispatcher.stop_bookmarks()
 

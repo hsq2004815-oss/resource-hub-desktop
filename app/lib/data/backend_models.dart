@@ -114,6 +114,13 @@ const String kDefaultQuickLinksHotkey = 'Ctrl + Alt + Shift + L';
 const String kDefaultQuickFoldersHotkey = 'Ctrl + Alt + Shift + F';
 const bool kDefaultBookmarkSyncEnabled = true;
 const String kDefaultBookmarkCustomDir = '';
+const String kDefaultBookmarkDeleteMode = 'ask';
+
+/// `ask` = ask per delete, `remove` = also remove the browser bookmark,
+/// `keep` = only delete locally (Phase 18).
+const String kBookmarkDeleteAsk = 'ask';
+const String kBookmarkDeleteRemove = 'remove';
+const String kBookmarkDeleteKeep = 'keep';
 
 /// Settings as stored by the backend (`settings.json`).
 class AppSettings {
@@ -125,6 +132,7 @@ class AppSettings {
     this.quickFoldersHotkeyId = kDefaultQuickFoldersHotkey,
     this.bookmarkSyncEnabled = kDefaultBookmarkSyncEnabled,
     this.bookmarkCustomDir = kDefaultBookmarkCustomDir,
+    this.bookmarkDeleteMode = kDefaultBookmarkDeleteMode,
     this.launchAtStartup = false,
   });
 
@@ -144,6 +152,10 @@ class AppSettings {
   /// Optional custom browser data directory (User Data dir, profile dir or a
   /// `Bookmarks` file). Empty means "auto-detect Chrome and Edge".
   final String bookmarkCustomDir;
+
+  /// What a delete does with the browser bookmark (Phase 18):
+  /// `ask`, `remove` or `keep`.
+  final String bookmarkDeleteMode;
   final bool launchAtStartup;
 
   AppSettings copyWith({
@@ -154,6 +166,7 @@ class AppSettings {
     String? quickFoldersHotkeyId,
     bool? bookmarkSyncEnabled,
     String? bookmarkCustomDir,
+    String? bookmarkDeleteMode,
     bool? launchAtStartup,
   }) {
     return AppSettings(
@@ -165,6 +178,7 @@ class AppSettings {
           quickFoldersHotkeyId ?? this.quickFoldersHotkeyId,
       bookmarkSyncEnabled: bookmarkSyncEnabled ?? this.bookmarkSyncEnabled,
       bookmarkCustomDir: bookmarkCustomDir ?? this.bookmarkCustomDir,
+      bookmarkDeleteMode: bookmarkDeleteMode ?? this.bookmarkDeleteMode,
       launchAtStartup: launchAtStartup ?? this.launchAtStartup,
     );
   }
@@ -177,6 +191,7 @@ class AppSettings {
         'quickFoldersHotkeyId': quickFoldersHotkeyId,
         'bookmarkSyncEnabled': bookmarkSyncEnabled,
         'bookmarkCustomDir': bookmarkCustomDir,
+        'bookmarkDeleteMode': bookmarkDeleteMode,
         'launchAtStartup': launchAtStartup,
       };
 
@@ -193,6 +208,8 @@ class AppSettings {
           kDefaultBookmarkSyncEnabled,
       bookmarkCustomDir: json['bookmarkCustomDir'] as String? ??
           kDefaultBookmarkCustomDir,
+      bookmarkDeleteMode: json['bookmarkDeleteMode'] as String? ??
+          kDefaultBookmarkDeleteMode,
       launchAtStartup: json['launchAtStartup'] as bool? ?? false,
     );
   }
@@ -398,6 +415,84 @@ class BookmarkSyncResult {
               ))
           .toList(growable: false),
       lastSyncAt: json['lastSyncAt'] as String?,
+    );
+  }
+}
+
+/// One browser bookmark matching a resource URL (Phase 18).
+class BookmarkMatch {
+  const BookmarkMatch({
+    required this.url,
+    this.title = '',
+    this.label = '',
+    this.path = '',
+  });
+
+  final String url;
+  final String title;
+
+  /// Browser profile label, e.g. `Chrome · Default`.
+  final String label;
+  final String path;
+
+  factory BookmarkMatch.fromJson(Map<String, dynamic> json) {
+    return BookmarkMatch(
+      url: json['url'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      label: json['label'] as String? ?? '',
+      path: json['path'] as String? ?? '',
+    );
+  }
+}
+
+/// Result of `bookmarks.extensionStatus` (Phase 18).
+class BookmarkExtensionStatus {
+  const BookmarkExtensionStatus({
+    this.connected = false,
+    this.lastSeenAt,
+    this.port,
+    this.pendingCommands = 0,
+    this.extensionPath = '',
+  });
+
+  final bool connected;
+  final String? lastSeenAt;
+  final int? port;
+  final int pendingCommands;
+
+  /// Folder shipped next to the exe with the unpacked extension.
+  final String extensionPath;
+
+  factory BookmarkExtensionStatus.fromJson(Map<String, dynamic> json) {
+    return BookmarkExtensionStatus(
+      connected: json['connected'] == true,
+      lastSeenAt: json['lastSeenAt'] as String?,
+      port: (json['port'] as num?)?.toInt(),
+      pendingCommands: (json['pendingCommands'] as num?)?.toInt() ?? 0,
+      extensionPath: json['extensionPath'] as String? ?? '',
+    );
+  }
+}
+
+/// Result of `resources.delete` (Phase 18 adds the browser flags).
+class DeleteOutcome {
+  const DeleteOutcome({
+    this.deleted = false,
+    this.browserQueued = false,
+    this.extensionConnected = false,
+  });
+
+  final bool deleted;
+
+  /// A "remove bookmark" command was queued for the extension.
+  final bool browserQueued;
+  final bool extensionConnected;
+
+  factory DeleteOutcome.fromJson(Map<String, dynamic> json) {
+    return DeleteOutcome(
+      deleted: json['deleted'] != false,
+      browserQueued: json['browserQueued'] == true,
+      extensionConnected: json['extensionConnected'] == true,
     );
   }
 }

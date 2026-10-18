@@ -13,7 +13,8 @@ websites, local folders and single files.
 - Quick-panel hotkeys: `Ctrl + Alt + Shift + L` (sites tree) and `Ctrl + Alt + Shift + F`
   (folders tree) open a compact Spotlight-style tree instead of the full window
 - Browser bookmark sync: new Chrome / Edge bookmarks are imported automatically
-  (reads the local bookmark files, read-only; no extension needed)
+  (reads the local bookmark files, read-only); an optional unpacked extension
+  adds two-way delete/rename sync (browser extension folder ships with the app)
 - Tray icon, global hotkey (`Ctrl + Alt + Space` by default), optional startup
 - Chinese / English UI, light / dark theme
 - Path health check, open, reveal in Explorer

@@ -20,6 +20,12 @@ DEFAULT_QUICK_LINKS_HOTKEY_ID = "Ctrl + Alt + Shift + L"
 DEFAULT_QUICK_FOLDERS_HOTKEY_ID = "Ctrl + Alt + Shift + F"
 SUPPORTED_LANGUAGES = frozenset({"zh", "en"})
 
+#: What deleting a link does with the matching browser bookmark (Phase 18):
+#: ``ask`` = ask per delete, ``remove`` = also queue a browser removal,
+#: ``keep`` = delete locally only.
+DELETE_MODES = ("ask", "remove", "keep")
+DEFAULT_BOOKMARK_DELETE_MODE = "ask"
+
 
 @dataclass(frozen=True, slots=True)
 class Settings:
@@ -31,6 +37,7 @@ class Settings:
     launch_at_startup: bool = False
     bookmark_sync_enabled: bool = True
     bookmark_custom_dir: str = ""
+    bookmark_delete_mode: str = DEFAULT_BOOKMARK_DELETE_MODE
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -42,6 +49,7 @@ class Settings:
             "launchAtStartup": self.launch_at_startup,
             "bookmarkSyncEnabled": self.bookmark_sync_enabled,
             "bookmarkCustomDir": self.bookmark_custom_dir,
+            "bookmarkDeleteMode": self.bookmark_delete_mode,
         }
 
     @classmethod
@@ -94,6 +102,10 @@ class Settings:
         custom_dir = raw.get("bookmarkCustomDir")
         if isinstance(custom_dir, str):
             settings = replace(settings, bookmark_custom_dir=custom_dir.strip())
+
+        delete_mode = raw.get("bookmarkDeleteMode")
+        if isinstance(delete_mode, str) and delete_mode.strip() in DELETE_MODES:
+            settings = replace(settings, bookmark_delete_mode=delete_mode.strip())
 
         return settings
 

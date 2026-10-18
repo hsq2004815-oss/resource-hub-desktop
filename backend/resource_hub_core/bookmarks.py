@@ -37,7 +37,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from .normalize import now_iso
 from .service import ORDER_META_FILENAME, ORDER_VERSION, ResourceService
@@ -423,6 +423,37 @@ class BookmarkSyncEngine:
 
     def _load_state(self) -> tuple[set[str], str | None]:
         return self._parse_state(self._load_meta())
+
+    # -- reverse sync (Phase 18) -------------------------------------------
+    def seen_urls(self) -> set[str]:
+        """Snapshot of the normalized URLs a previous sync has already imported."""
+        return self._load_state()[0]
+
+    def forget_seen(self, urls: Iterable[str]) -> int:
+        """Drop seen URLs from the ledger so re-bookmarking one imports it again.
+
+        The browser extension calls this when the user deletes a bookmark in the
+        browser: the bookmark is gone, so the "never resurrect a deleted
+        resource" ledger must forget it (otherwise re-adding the same bookmark
+        later would be ignored forever). Every other key in the meta file —
+        especially ``orderVersion`` — and the previous ``lastSyncAt`` are kept.
+
+        Returns how many of ``urls`` were actually in the ledger.
+        """
+        targets = {dedup_key(str(url)) for url in urls}
+        if not targets:
+            return 0
+        meta = self._load_meta()
+        seen, last_sync = self._parse_state(meta)
+        forgotten = seen & targets
+        if not forgotten:
+            return 0
+        meta[_META_BOOKMARKS_KEY] = {
+            _META_SEEN_KEY: sorted(seen - forgotten),
+            _META_LAST_SYNC_KEY: last_sync,
+        }
+        self._meta_store.save(meta)
+        return len(forgotten)
 
     # -- read-only views ---------------------------------------------------
     def collect(self, settings: Settings) -> BookmarkCollection:

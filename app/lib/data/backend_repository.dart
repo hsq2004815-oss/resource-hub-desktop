@@ -101,12 +101,20 @@ class BackendRepository implements ResourceApi {
   }
 
   @override
-  Future<bool> delete(ViewMode mode, String id) async {
+  Future<DeleteOutcome> delete(
+    ViewMode mode,
+    String id, {
+    bool removeFromBrowser = false,
+  }) async {
     final Map<String, dynamic> result = await client.call(
       'resources.delete',
-      <String, dynamic>{'mode': mode.name, 'id': id},
+      <String, dynamic>{
+        'mode': mode.name,
+        'id': id,
+        if (removeFromBrowser) 'removeFromBrowser': true,
+      },
     );
-    return result['deleted'] as bool? ?? false;
+    return DeleteOutcome.fromJson(result);
   }
 
   @override
@@ -232,6 +240,28 @@ class BackendRepository implements ResourceApi {
   Future<BookmarkStatus> loadBookmarkStatus() async {
     final Map<String, dynamic> result = await client.call('bookmarks.status');
     return BookmarkStatus.fromJson(result);
+  }
+
+  @override
+  Future<List<BookmarkMatch>> bookmarkMatches(List<String> urls) async {
+    if (urls.isEmpty) {
+      return const <BookmarkMatch>[];
+    }
+    final Map<String, dynamic> result = await client.call(
+      'bookmarks.matches',
+      <String, dynamic>{'urls': urls},
+    );
+    return (result['matches'] as List<dynamic>? ?? <dynamic>[])
+        .map((dynamic e) =>
+            BookmarkMatch.fromJson(e as Map<String, dynamic>))
+        .toList(growable: false);
+  }
+
+  @override
+  Future<BookmarkExtensionStatus> loadBookmarkExtensionStatus() async {
+    final Map<String, dynamic> result =
+        await client.call('bookmarks.extensionStatus');
+    return BookmarkExtensionStatus.fromJson(result);
   }
 
   Future<AppSettings> loadSettings() async {
