@@ -1,4 +1,4 @@
-# Resource Hub Desktop
+# 抽屉 Drawer
 
 A Windows desktop launcher for the things you use every day: frequently visited
 websites, local folders and single files.

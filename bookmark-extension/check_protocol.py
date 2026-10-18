@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Resource Hub 书签桥 —— 协议自检（只使用 Python 标准库，不需要浏览器）。
+"""抽屉书签桥 —— 协议自检（只使用 Python 标准库，不需要浏览器）。
 
 本脚本做两件事：
 
@@ -80,8 +80,8 @@ def run_static_checks() -> None:
     manifest = manifest if isinstance(manifest, dict) else {}
 
     check("manifest_version == 3", manifest.get("manifest_version") == 3)
-    check("name == 'Resource Hub 书签桥'", manifest.get("name") == "Resource Hub 书签桥")
-    check("version == '1.0.0'", manifest.get("version") == "1.0.0")
+    check("name == '抽屉书签桥'", manifest.get("name") == "抽屉书签桥")
+    check("version == '1.1.0'", manifest.get("version") == "1.1.0")
     check(
         "description 非空",
         isinstance(manifest.get("description"), str) and bool(manifest.get("description")),
@@ -468,7 +468,7 @@ def main() -> int:
         except (OSError, ValueError):
             pass
 
-    print("Resource Hub 书签桥 —— 协议自检 (check_protocol.py)")
+    print("抽屉书签桥 —— 协议自检 (check_protocol.py)")
     print(f"扩展目录: {BASE_DIR}")
 
     run_static_checks()

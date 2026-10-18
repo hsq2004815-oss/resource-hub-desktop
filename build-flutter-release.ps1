@@ -1,4 +1,4 @@
-# Build the installable Resource Hub Desktop package.
+# Build the installable 抽屉 (Drawer) desktop package.
 #
 # Produces release\ResourceHub-Desktop-<stamp>\ with:
 #   resource_hub.exe          Flutter client (built from app\)
@@ -108,7 +108,7 @@ if (Test-Path $extensionSource) {
 }
 
 $readme = @"
-Resource Hub Desktop
+抽屉 Drawer
 ====================
 
 启动：双击 resource_hub.exe
@@ -132,7 +132,7 @@ settings.json        语言、主题、全局快捷键、开机启动
   也可指定自定义书签目录）。
 * 双向书签同步（可选）：要用「工具里删除 → 浏览器也取消收藏」，请按 bookmark-extension\README.md
   在 Chrome/Edge 开发者模式加载扩展（一次性，两边各一次）。
-* 资源管理器右键菜单：右键文件夹图标，或文件夹内空白处 →「添加到常用资源工具」
+* 资源管理器右键菜单：右键文件夹图标，或文件夹内空白处 →「添加到抽屉」
   （Win11 在「显示更多选项」里），工具会弹出并选中新加的文件夹；设置里可关闭。
 * 开机启动由设置里的开关创建/删除“启动”文件夹快捷方式（静默进托盘）。
 * 导入/导出使用 JSON 备份文件，格式与原 Python 版完全兼容。

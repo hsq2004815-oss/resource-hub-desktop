@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.mytools" "\0"
-            VALUE "FileDescription", "resource_hub" "\0"
+            VALUE "FileDescription", "Drawer" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "resource_hub" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.mytools. All rights reserved." "\0"
             VALUE "OriginalFilename", "resource_hub.exe" "\0"
-            VALUE "ProductName", "resource_hub" "\0"
+            VALUE "ProductName", "Drawer" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

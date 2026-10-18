@@ -140,13 +140,12 @@ bool CreateMenuEntry(const wchar_t* key_path,
 }
 
 bool CreateShellContextMenu() {
-  // "添加到常用资源工具" / "添加当前文件夹到常用资源工具", written as
-  // escapes so the runner source stays ASCII-only.
+  // "添加到抽屉" / "添加当前文件夹到抽屉", written as escapes so the runner
+  // source stays ASCII-only.
   const std::wstring folder_label =
-      L"\u6DFB\u52A0\u5230\u5E38\u7528\u8D44\u6E90\u5DE5\u5177";
-  const std::wstring background_label = L"\u6DFB\u52A0\u5F53\u524D\u6587\u4EF6"
-                                        L"\u5939\u5230\u5E38\u7528\u8D44\u6E90"
-                                        L"\u5DE5\u5177";
+      L"\u6DFB\u52A0\u5230\u62BD\u5C49";
+  const std::wstring background_label =
+      L"\u6DFB\u52A0\u5F53\u524D\u6587\u4EF6\u5939\u5230\u62BD\u5C49";
   const bool folder_ok = CreateMenuEntry(kShellMenuKey, folder_label, L"%1");
   const bool background_ok =
       CreateMenuEntry(kShellMenuBackgroundKey, background_label, L"%V");
@@ -226,20 +225,43 @@ std::wstring StartupShortcutPath() {
   }
   std::wstring path(folder);
   ::CoTaskMemFree(folder);
+  path += L"\\\u62BD\u5C49.lnk";
+  return path;
+}
+
+namespace {
+
+// Phase 20: before the app was renamed the shortcut was "Resource Hub.lnk".
+std::wstring LegacyStartupShortcutPath() {
+  PWSTR folder = nullptr;
+  if (FAILED(::SHGetKnownFolderPath(FOLDERID_Startup, 0, nullptr, &folder)) ||
+      folder == nullptr) {
+    return std::wstring();
+  }
+  std::wstring path(folder);
+  ::CoTaskMemFree(folder);
   path += L"\\Resource Hub.lnk";
   return path;
 }
+
+}  // namespace
 
 bool SetLaunchAtStartup(bool enabled) {
   const std::wstring shortcut = StartupShortcutPath();
   if (shortcut.empty()) {
     return false;
   }
+  const std::wstring legacy = LegacyStartupShortcutPath();
   if (!enabled) {
-    if (::DeleteFileW(shortcut.c_str())) {
-      return true;
-    }
-    return ::GetLastError() == ERROR_FILE_NOT_FOUND;
+    const bool removed_new = ::DeleteFileW(shortcut.c_str()) != 0 ||
+                             ::GetLastError() == ERROR_FILE_NOT_FOUND;
+    const bool removed_legacy =
+        legacy.empty() || ::DeleteFileW(legacy.c_str()) != 0 ||
+        ::GetLastError() == ERROR_FILE_NOT_FOUND;
+    return removed_new && removed_legacy;
+  }
+  if (!legacy.empty()) {
+    ::DeleteFileW(legacy.c_str());
   }
 
   const std::wstring executable = ExecutablePath();
@@ -261,7 +283,7 @@ bool SetLaunchAtStartup(bool enabled) {
       SUCCEEDED(link->SetArguments(kStartupHiddenFlag)) &&
       SUCCEEDED(link->SetWorkingDirectory(working_directory.c_str())) &&
       SUCCEEDED(link->SetIconLocation(executable.c_str(), 0)) &&
-      SUCCEEDED(link->SetDescription(L"Resource Hub"))) {
+      SUCCEEDED(link->SetDescription(L"\u62BD\u5C49 Drawer"))) {
     IPersistFile* file = nullptr;
     if (SUCCEEDED(link->QueryInterface(IID_PPV_ARGS(&file)))) {
       saved = SUCCEEDED(file->Save(shortcut.c_str(), TRUE));

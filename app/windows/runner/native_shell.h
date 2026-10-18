@@ -34,7 +34,7 @@ bool SetLaunchAtStartup(bool enabled);
 // Whether the Startup shortcut currently exists.
 bool GetLaunchAtStartup();
 
-// Phase 19: HKCU Explorer folder context-menu entry ("添加到常用资源工具").
+// Phase 19: HKCU Explorer folder context-menu entry ("添加到抽屉").
 //
 // Writes only HKCU\Software\Classes\Directory\shell\ResourceHubAddFolder, so
 // no elevation is needed and the entry can be removed at any time. On Windows 11

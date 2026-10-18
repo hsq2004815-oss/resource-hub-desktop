@@ -26,8 +26,8 @@ MENU_KEY = r"Software\Classes\Directory\shell\ResourceHubAddFolder"
 MENU_BACKGROUND_KEY = (
     r"Software\Classes\Directory\Background\shell\ResourceHubAddFolder"
 )
-MENU_LABEL = "添加到常用资源工具"
-MENU_BACKGROUND_LABEL = "添加当前文件夹到常用资源工具"
+MENU_LABEL = "添加到抽屉"
+MENU_BACKGROUND_LABEL = "添加当前文件夹到抽屉"
 WINDOW_CLASS = "FLUTTER_RUNNER_WIN32_WINDOW"
 report: dict[str, object] = {"probes": {}}
 

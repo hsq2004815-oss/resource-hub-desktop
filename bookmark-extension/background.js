@@ -1,8 +1,8 @@
 /**
- * Resource Hub 书签桥 —— Manifest V3 service worker（Chrome / Edge 通用）
+ * 抽屉书签桥 —— Manifest V3 service worker（Chrome / Edge 通用）
  *
  * 职责：
- *   1. 发现本机 Resource Hub 的 HTTP 桥接端口（127.0.0.1:47821..47830）并记住；
+ *   1. 发现本机 抽屉 的 HTTP 桥接端口（127.0.0.1:47821..47830）并记住；
  *   2. 每 1500ms 拉取一次删除命令（GET /commands），用 chrome.bookmarks API
  *      执行后回执（POST /ack）；
  *   3. 监听浏览器书签的删除/改名，批量上报（POST /events），失败时缓存重发。
@@ -181,7 +181,7 @@ function markOnline(port) {
   runtime.offlineLogged = false;
   if (!runtime.connected) {
     runtime.connected = true;
-    console.log(`[Resource Hub] 已连接本机程序 127.0.0.1:${port}`);
+    console.log(`[抽屉] 已连接本机程序 127.0.0.1:${port}`);
   }
 }
 
@@ -189,7 +189,7 @@ function markOffline() {
   runtime.connected = false;
   if (!runtime.offlineLogged) {
     runtime.offlineLogged = true;
-    console.warn('[Resource Hub] 未连接本机程序，等待 bridge 端口 47821-47830 …');
+    console.warn('[抽屉] 未连接本机程序，等待 bridge 端口 47821-47830 …');
   }
 }
 

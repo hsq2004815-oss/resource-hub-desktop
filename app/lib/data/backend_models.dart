@@ -159,7 +159,7 @@ class AppSettings {
   /// `ask`, `remove` or `keep`.
   final String bookmarkDeleteMode;
 
-  /// Phase 19: show "添加到常用资源工具" in the Explorer folder context menu.
+  /// Phase 19: show "添加到抽屉" in the Explorer folder context menu.
   final bool shellContextMenuEnabled;
   final bool launchAtStartup;
 

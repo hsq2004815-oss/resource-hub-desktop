@@ -396,7 +396,7 @@ void FlutterWindow::InstallTray() {
   if (data.hIcon == nullptr) {
     data.hIcon = ::LoadIconW(nullptr, IDI_APPLICATION);
   }
-  wcscpy_s(data.szTip, L"Resource Hub");
+  wcscpy_s(data.szTip, L"\u62BD\u5C49 Drawer");
   tray_installed_ = ::Shell_NotifyIconW(NIM_ADD, &data) != FALSE;
 }
 

@@ -38,7 +38,7 @@ class Settings:
     bookmark_sync_enabled: bool = True
     bookmark_custom_dir: str = ""
     bookmark_delete_mode: str = DEFAULT_BOOKMARK_DELETE_MODE
-    # Phase 19: Explorer right-click entry "添加到常用资源工具" (HKCU only).
+    # Phase 19: Explorer right-click entry "添加到抽屉" (HKCU only).
     shell_context_menu_enabled: bool = True
 
     def to_json(self) -> dict[str, Any]:

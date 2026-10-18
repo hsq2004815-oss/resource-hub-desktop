@@ -78,8 +78,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   Win32Window::Point origin(10, 10);
   // Client area 1280x820, matching the original Tkinter geometry("1280x820").
   Win32Window::Size size(1280, 820);
-  // Window title: "常用资源工具" written as escapes to avoid source encoding issues.
-  if (!window.Create(L"\u5E38\u7528\u8D44\u6E90\u5DE5\u5177", origin, size)) {
+  // Window title: "抽屉 / Drawer" written as escapes so the runner stays
+  // ASCII-only; Flutter replaces it with the localized name after boot.
+  if (!window.Create(L"\u62BD\u5C49", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

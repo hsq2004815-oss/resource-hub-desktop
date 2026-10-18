@@ -12,6 +12,7 @@ import 'strings.g.dart';
 const Map<String, Map<String, String>> kAppOnlyStrings =
     <String, Map<String, String>>{
   'zh': <String, String>{
+    'window_title': '抽屉',
     'settings_theme': '外观主题',
     'theme_light': '浅色',
     'theme_system': '跟随系统',
@@ -123,6 +124,7 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
         '在文件夹图标上，或文件夹内空白处右键（Windows 11 在「显示更多选项」里）即可添加到本工具；关闭后自动移除菜单项。',
   },
   'en': <String, String>{
+    'window_title': 'Drawer',
     'settings_theme': 'Appearance',
     'theme_light': 'Light',
     'theme_system': 'System',

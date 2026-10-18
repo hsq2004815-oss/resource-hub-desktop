@@ -1,4 +1,4 @@
-﻿# Resource Hub 迁移文档索引
+﻿# 抽屉 Drawer 迁移文档索引
 
 把 `resource_hub.pyw`（Python Tkinter，单文件）迁移为 **Flutter 前端 + Python 后端**的完整记录。
 按顺序阅读：
@@ -25,6 +25,7 @@
 | [`phase17-bookmark-sync.md`](phase17-bookmark-sync.md) | 浏览器书签自动同步：只读 Chrome/Edge 本地书签、文件夹做分类、只新增、启动导入 + 监听、设置开关与自定义目录 |
 | [`phase18-bookmark-extension.md`](phase18-bookmark-extension.md) | 双向书签同步：浏览器扩展 + 本机回环桥，工具删除→浏览器取消收藏，浏览器删除/改名→工具同步 |
 | [`phase19-context-menu.md`](phase19-context-menu.md) | 资源管理器右键菜单：右键文件夹添加到资源库并弹窗选中；设置里可开关（Win11 在「显示更多选项」） |
+| [`phase20-rename.md`](phase20-rename.md) | 产品改名「常用资源工具」→「抽屉 Drawer」：仅显示名（标题/托盘/菜单文案/扩展名/快捷方式），exe 与数据路径不变 |
 | [`adr/ADR-001-tray-hotkey-ownership.md`](adr/ADR-001-tray-hotkey-ownership.md) | 托盘/热键归属、导入导出入口、数据覆盖风险 |
 | [`adr/ADR-002-native-shell-ownership.md`](adr/ADR-002-native-shell-ownership.md) | Windows 壳层归属（runner vs 后端） |
 

@@ -77,7 +77,7 @@ class _ResourceHubAppState extends State<ResourceHubApp> {
   /// Keeps the native window title and tray menu in the active language.
   void _syncWindowStrings(AppLanguage language) {
     final AppStrings strings = AppStrings(language);
-    WindowControl.setTitle(strings.t('window_title'));
+    WindowControl.setTitle(strings.tx('window_title'));
     WindowControl.setTrayLabels(
       toggle: strings.t('tray_toggle'),
       exit: strings.t('tray_exit'),
@@ -177,7 +177,7 @@ class _ResourceHubAppState extends State<ResourceHubApp> {
       strings: strings,
       onLanguageChanged: _setLanguage,
       child: MaterialApp(
-        title: strings.t('window_title'),
+        title: strings.tx('window_title'),
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,

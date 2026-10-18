@@ -1,14 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Resource Hub 书签桥",
-  "version": "1.0.0",
-  "description": "同步 Resource Hub 与浏览器的书签（删除/改名），仅与本机程序通信。",
+  "name": "抽屉书签桥",
+  "version": "1.1.0",
+  "description": "同步抽屉与浏览器的书签（删除/改名），仅与本机程序通信。",
   "permissions": ["bookmarks", "storage"],
   "host_permissions": ["http://127.0.0.1/*"],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Resource Hub 书签桥"
+    "default_title": "抽屉书签桥"
   }
 }
