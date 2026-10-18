@@ -222,11 +222,17 @@ class ResourceListPanel extends StatelessWidget {
                     onLayoutChanged(value.first),
               ),
               const SizedBox(width: AppSpacing.sm),
-              FilledButton.icon(
+              // One primary action: a circular filled icon button (M3 filled
+              // icon button). The label lives in the tooltip so the header stays
+              // compact and the plus is the only visible affordance.
+              IconButton.filled(
+                tooltip: t.t(isLinks ? 'form_add_link' : 'form_add_folder'),
                 onPressed: onAdd,
-                icon: const Icon(Icons.add, size: 18),
-                label: Text(
-                  t.t(isLinks ? 'form_add_link' : 'form_add_folder'),
+                icon: const Icon(Icons.add, size: 20),
+                style: IconButton.styleFrom(
+                  minimumSize: const Size(40, 40),
+                  padding: EdgeInsets.zero,
+                  shape: const CircleBorder(),
                 ),
               ),
             ],

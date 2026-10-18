@@ -1,4 +1,4 @@
-// Shell tests driven by an in-memory fake, so they never spawn Python.
+﻿// Shell tests driven by an in-memory fake, so they never spawn Python.
 //
 // The real backend path is covered by `backend_client_test.dart`; these tests are
 // about layout, i18n, filtering and theme — they must stay fast and offline.
@@ -633,7 +633,7 @@ void main() {
     await pumpApp(tester);
 
     expect(find.byType(ResourceForm), findsNothing);
-    await tester.tap(find.text('新增资源'));
+    await tester.tap(find.byTooltip('新增资源'));
     await tester.pumpAndSettle();
     expect(find.byType(ResourceForm), findsOneWidget);
 
@@ -663,7 +663,7 @@ void main() {
     final FakeApi api = FakeApi();
     await pumpApp(tester, api: api);
 
-    await tester.tap(find.text('新增资源'));
+    await tester.tap(find.byTooltip('新增资源'));
     await tester.pumpAndSettle();
 
     final Finder formFields = find.descendant(
@@ -686,7 +686,7 @@ void main() {
     final FakeApi api = _RejectingApi();
     await pumpApp(tester, api: api);
 
-    await tester.tap(find.text('新增资源'));
+    await tester.tap(find.byTooltip('新增资源'));
     await tester.pumpAndSettle();
 
     final Finder formFields = find.descendant(
