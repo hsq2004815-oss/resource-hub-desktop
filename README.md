@@ -28,6 +28,12 @@ websites, local folders and single files.
 - Chinese / English UI, light / dark theme
 - Path health check, open, reveal in Explorer
 
+## Download
+
+**[⬇ Download Drawer v1.0.4 for Windows (64-bit)](https://github.com/hsq2004815-oss/resource-hub-desktop/releases/latest)**
+— ~22 MB zip, unzip the whole folder and run `resource_hub.exe`. No Python or
+runtime install needed. Data stays next to the executable.
+
 ## User Guide
 
 A Chinese user manual is included with the app:
