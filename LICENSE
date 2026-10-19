@@ -1,37 +1,21 @@
-抽屉 Drawer（resource_hub）许可证
-==================================
+MIT License
 
 Copyright (c) 2026 黄双全 (Huang Shuangquan)
-保留所有权利。All rights reserved.
 
-本软件及其源代码、文档（以下简称"本软件"）仅供个人学习、研究与非商业性使用。
-在完整保留本版权声明和本许可条款的前提下，你可以：
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-  1. 在个人设备上安装、运行本软件；
-  2. 为个人学习目的阅读、修改源代码；
-  3. 将未经修改的完整副本免费分享给他人用于个人、非商业用途。
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-未经版权所有者事先书面许可，严禁：
-
-  1. 任何形式的商业使用，包括但不限于销售、出租、许可、收费分发本软件或
-     其衍生版本；
-  2. 将本软件（或其中的代码、修改版、衍生作品）集成进任何商业产品、
-     付费服务或以盈利为目的的产品；
-  3. 重新打包、公开发布、上传到应用商店 / 下载站 / 代码托管平台，或提供
-     以获利或获取商业利益为目的的下载；
-  4. 分发修改后的版本（个人修改仅供自己使用）；
-  5. 移除或修改本版权声明、作者署名或许可声明，或以作者名义为衍生作品背书。
-
-本软件按"现状"提供，不附带任何明示或暗示的保证，包括但不限于适销性、
-特定用途适用性和不侵权的保证。在任何情况下，作者均不对因使用本软件而产生
-的任何索赔、损害或其他责任负责。
-
-本许可不授予任何商标、标识或品牌使用权。
-
-商业授权及其他授权事宜请联系：2946847831@qq.com
-
-------------------------------------------------------------------------
-历史版本说明
-
-v1.0.2 及更早版本曾以 MIT License 发布，已经获得的旧版本适用其原许可；
-自本版本（v1.0.3）起的新版本适用上述条款。
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
