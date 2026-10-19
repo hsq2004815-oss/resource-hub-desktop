@@ -1,5 +1,8 @@
 # 抽屉 Drawer
 
+© 2026 黄双全 (Huang Shuangquan). All rights reserved / 保留所有权利。禁止商业使用。
+详见 [LICENSE](LICENSE)。
+
 A Windows desktop launcher for the things you use every day: frequently visited
 websites, local folders and single files.
 
@@ -127,4 +130,16 @@ python -m unittest discover -s tests -t .     # 167 tests
 
 ## License
 
-MIT
+Copyright (c) 2026 黄双全 (Huang Shuangquan). **All rights reserved / 保留所有权利。
+禁止商业使用。禁止未经许可的重新打包、公开分发与商业集成。**
+
+This project is source-available but **not open source**. You may install and run
+it for personal, non-commercial use, read or modify the source for personal
+learning, and share **unmodified** copies free of charge. Commercial use,
+repackaging, public redistribution / app-store uploads and distribution of
+modified versions require prior written permission. See [LICENSE](LICENSE) for
+the full terms.
+
+> 历史说明：v1.0.2 及更早版本以 MIT 协议发布；从 v1.0.3 起改为"保留所有权利、
+> 禁止商业使用"。Already-released versions up to v1.0.2 remain under their
+> original MIT license; from v1.0.3 onward the terms above apply.

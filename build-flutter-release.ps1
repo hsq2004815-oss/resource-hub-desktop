@@ -107,9 +107,20 @@ if (Test-Path $extensionSource) {
     Copy-Item -Path (Join-Path $extensionSource "*") -Destination $extensionOut -Recurse -Force
 }
 
+# v1.0.3: ship the license with the binaries (all rights reserved, no commercial use).
+$licenseSource = Join-Path $root "LICENSE"
+if (-not (Test-Path $licenseSource)) {
+    throw "LICENSE missing: $licenseSource"
+}
+Copy-Item -Path $licenseSource -Destination (Join-Path $out "LICENSE.txt") -Force
+
 $readme = @"
 抽屉 Drawer
 ====================
+
+版权所有 (c) 2026 黄双全，保留所有权利。
+本程序仅供个人学习、研究与非商业使用；未经作者书面许可，禁止商业使用、转售、
+重新打包发布或集成进商业产品。完整条款见同目录 LICENSE.txt。
 
 启动：双击 resource_hub.exe
 
@@ -138,6 +149,7 @@ settings.json        语言、主题、全局快捷键、开机启动
   未分类网站/文件夹的分类建议，勾选后才会写入；密钥用 Windows DPAPI 加密保存在本机。
 * 开机启动由设置里的开关创建/删除“启动”文件夹快捷方式（静默进托盘）。
 * 导入/导出使用 JSON 备份文件，格式与原 Python 版完全兼容。
+* 分享给他人时请保持文件夹完整、未经修改，并保留 LICENSE.txt 与本说明。
 "@
 Set-Content -Path (Join-Path $out "README.txt") -Value $readme -Encoding UTF8
 
