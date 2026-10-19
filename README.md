@@ -6,7 +6,7 @@ A Windows desktop launcher for the things you use every day: frequently visited
 websites, local folders and single files.
 
 - Two resource types: links (sites) and local paths (folders / files)
-- Search, category filters, favorites (a star, no longer pinned)
+- Search, category filters, favorites (pinned to the top)
 - Drag rows or cards to arrange the order (list and grid), with a 5-second undo
 - Click a resource to open the details panel: a zoomable folder mind map (folders)
   or link/file details, without leaving the list
@@ -121,10 +121,10 @@ so existing data can be migrated as-is.
 
 ```powershell
 cd app
-flutter test                                  # 50 tests: widgets, protocol, JSON
+flutter test                                  # 75 tests: widgets, protocol, JSON
 
 cd backend
-python -m unittest discover -s tests -t .     # 167 tests
+python -m unittest discover -s tests -t .     # 326 tests (1 skipped: symlink)
 ```
 
 ## Notes
