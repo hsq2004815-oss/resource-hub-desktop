@@ -35,6 +35,8 @@ It covers installation, adding resources, the folder mind map, quick-panel
 hotkeys, browser bookmark sync, the Explorer context menu, AI suggestions,
 data/backup, shortcuts and troubleshooting.
 
+See [CHANGELOG.md](CHANGELOG.md) for the tagged milestones (`v0.1.0` … `v1.0.2`).
+
 ## Implementations
 
 This repository contains two generations of the app:
