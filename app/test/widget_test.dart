@@ -529,6 +529,27 @@ Future<void> dragReorderGrip(
   await tester.pumpAndSettle();
 }
 
+/// Drags with a mouse pointer so the pan recogniser kicks in after two logical
+/// pixels instead of the much larger touch slop.
+Future<void> dragWithMouse(
+  WidgetTester tester,
+  Offset start,
+  Offset delta, {
+  int steps = 6,
+}) async {
+  final TestGesture gesture = await tester.startGesture(
+    start,
+    kind: PointerDeviceKind.mouse,
+  );
+  await tester.pump(const Duration(milliseconds: 16));
+  for (int i = 0; i < steps; i++) {
+    await gesture.moveBy(delta / steps.toDouble());
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  await gesture.up();
+  await tester.pumpAndSettle();
+}
+
 List<String> folderIds(FakeApi api) =>
     api.folders.map((ResourceItem item) => item.id).toList();
 
@@ -1256,6 +1277,52 @@ void main() {
     await tester.tap(find.byTooltip('收起').first);
     await tester.pumpAndSettle();
     expect(find.text('main.dart'), findsNothing);
+  });
+
+  testWidgets('dragging the empty map canvas pans the view',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    await tester.tap(find.text('项目主目录'));
+    await tester.pumpAndSettle();
+
+    final Finder map = find.byType(MindMap);
+    final Finder src = find.descendant(of: map, matching: find.text('src'));
+    // The content rect starts with a blank margin, so its top-left corner is
+    // empty canvas that used to be swallowed by the edge painter's hit test.
+    final Rect content =
+        tester.getRect(find.byKey(const ValueKey<String>('mind-map-content')));
+    final Offset before = tester.getTopLeft(src);
+
+    await dragWithMouse(
+      tester,
+      content.topLeft + const Offset(3, 3),
+      const Offset(46, 30),
+    );
+
+    final Offset moved = tester.getTopLeft(src) - before;
+    expect(moved.dx, moreOrLessEquals(46, epsilon: 1.5));
+    expect(moved.dy, moreOrLessEquals(30, epsilon: 1.5));
+    expect(api.openPathCalls, 0);
+    expect(api.listChildrenCalls, 1);
+  });
+
+  testWidgets('dragging a map node card pans the view instead of opening it',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+    await tester.tap(find.text('项目主目录'));
+    await tester.pumpAndSettle();
+
+    final Finder docs = find.text('docs');
+    final Offset before = tester.getTopLeft(docs);
+    await dragWithMouse(tester, tester.getCenter(docs), const Offset(-38, 24));
+
+    final Offset moved = tester.getTopLeft(docs) - before;
+    expect(moved.dx, moreOrLessEquals(-38, epsilon: 1.5));
+    expect(moved.dy, moreOrLessEquals(24, epsilon: 1.5));
+    expect(api.openPathCalls, 0);
+    expect(api.lastOpenedPath, isNull);
   });
 
   testWidgets('double-clicking a mind map node opens it through the shell api',

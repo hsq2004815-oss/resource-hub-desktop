@@ -116,10 +116,19 @@ class _MindMapState extends State<MindMap> {
   _MapNode? _nodeToReveal;
   Size _viewport = Size.zero;
   Size _content = Size.zero;
-  double _zoom = 1.0;
-  Offset _offset = Offset.zero;
+
+  /// Zoom + pan live in a notifier so dragging only rebuilds the transform
+  /// wrapper. Rebuilding every node on each mouse event made panning stutter.
+  final ValueNotifier<_MapView> _view = ValueNotifier<_MapView>(
+    const _MapView(zoom: 1.0, offset: Offset.zero),
+  );
+  bool _panning = false;
+  bool _layoutDirty = true;
   bool _initialFitDone = false;
   bool _fitScheduled = false;
+
+  double get _zoom => _view.value.zoom;
+  Offset get _offset => _view.value.offset;
 
   @override
   void initState() {
@@ -136,9 +145,18 @@ class _MindMapState extends State<MindMap> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Text metrics may change with the locale/theme; lay out again on the next
+    // build rather than on every pointer move.
+    _layoutDirty = true;
+  }
+
+  @override
   void dispose() {
     widget.controller?._detach(this);
     _focus.dispose();
+    _view.dispose();
     super.dispose();
   }
 
@@ -151,6 +169,7 @@ class _MindMapState extends State<MindMap> {
       node.loading = true;
       node.errorKey = null;
       node.expanded = true;
+      _layoutDirty = true;
     });
     try {
       final FsListing listing = await widget.loadChildren(node.path);
@@ -174,6 +193,7 @@ class _MindMapState extends State<MindMap> {
         node.total = listing.total;
         node.truncated = listing.truncated;
         node.expanded = true;
+        _layoutDirty = true;
         _nodeToReveal = node.isRoot || children.isEmpty ? null : children.last;
       });
       if (node.isRoot) {
@@ -194,6 +214,7 @@ class _MindMapState extends State<MindMap> {
         node.children = null;
         node.expanded = true;
         node.errorKey = _errorKey(error);
+        _layoutDirty = true;
       });
     }
   }
@@ -228,11 +249,17 @@ class _MindMapState extends State<MindMap> {
       return;
     }
     if (node.expanded) {
-      setState(() => node.expanded = false);
+      setState(() {
+        node.expanded = false;
+        _layoutDirty = true;
+      });
       return;
     }
     if (node.children != null) {
-      setState(() => node.expanded = true);
+      setState(() {
+        node.expanded = true;
+        _layoutDirty = true;
+      });
       return;
     }
     await _loadNode(node);
@@ -266,13 +293,11 @@ class _MindMapState extends State<MindMap> {
       maxLines: 1,
       textDirection: TextDirection.ltr,
     )..layout();
-    final double extra = node.isRoot
-        ? 74
-        : (node.isFolder
-            ? 62
-            : 50);
-    return (painter.width + extra).clamp(node.isRoot ? 150.0 : 98.0,
-        node.isRoot ? 280.0 : 226.0);
+    final double extra = node.isRoot ? 74 : (node.isFolder ? 62 : 50);
+    return (painter.width + extra).clamp(
+      node.isRoot ? 150.0 : 98.0,
+      node.isRoot ? 280.0 : 226.0,
+    );
   }
 
   List<_MapNode> _visibleChildren(_MapNode node) {
@@ -327,17 +352,13 @@ class _MindMapState extends State<MindMap> {
       maxRight = math.max(maxRight, node.x + node.width);
       maxBottom = math.max(maxBottom, node.y + node.height);
     }
-    _content = Size(
-      maxRight + _margin + _toggleSize,
-      maxBottom + _margin,
-    );
-    _navNodes = _visible
-        .where((_MapNode node) => node.placeholder == null)
-        .toList()
-      ..sort((_MapNode a, _MapNode b) {
-        final int byY = a.y.compareTo(b.y);
-        return byY != 0 ? byY : a.x.compareTo(b.x);
-      });
+    _content = Size(maxRight + _margin + _toggleSize, maxBottom + _margin);
+    _navNodes =
+        _visible.where((_MapNode node) => node.placeholder == null).toList()
+          ..sort((_MapNode a, _MapNode b) {
+            final int byY = a.y.compareTo(b.y);
+            return byY != 0 ? byY : a.x.compareTo(b.x);
+          });
   }
 
   void _layoutNode(BuildContext context, _MapNode node, double x) {
@@ -345,8 +366,8 @@ class _MindMapState extends State<MindMap> {
     node.height = node.placeholder != null
         ? _placeholderHeight
         : (node.isRoot
-            ? _rootHeight
-            : (node.isFile ? _fileHeight : _folderHeight));
+              ? _rootHeight
+              : (node.isFile ? _fileHeight : _folderHeight));
     node.x = x;
     final List<_MapNode> children = _visibleChildren(node);
     if (children.isEmpty) {
@@ -386,6 +407,39 @@ class _MindMapState extends State<MindMap> {
     });
   }
 
+  /// Single entry point for view changes; keeps the notifier and the toolbar
+  /// percentage in sync without rebuilding the node tree.
+  void _setView({double? zoom, Offset? offset}) {
+    final _MapView current = _view.value;
+    final double nextZoom = zoom ?? current.zoom;
+    final Offset nextOffset = offset ?? current.offset;
+    if (nextZoom == current.zoom && nextOffset == current.offset) {
+      return;
+    }
+    _view.value = _MapView(zoom: nextZoom, offset: nextOffset);
+  }
+
+  void _panBy(Offset delta) {
+    if (delta == Offset.zero) {
+      return;
+    }
+    _setView(offset: _offset + delta);
+  }
+
+  void _startPan() {
+    if (_panning) {
+      return;
+    }
+    setState(() => _panning = true);
+  }
+
+  void _stopPan() {
+    if (!_panning) {
+      return;
+    }
+    setState(() => _panning = false);
+  }
+
   void _fitView() {
     if (_viewport.width <= 0 || _content.width <= 0) {
       return;
@@ -399,10 +453,7 @@ class _MindMapState extends State<MindMap> {
       (_viewport.width - _content.width * next) / 2,
       (_viewport.height - _content.height * next) / 2,
     );
-    setState(() {
-      _zoom = next;
-      _offset = offset;
-    });
+    _setView(zoom: next, offset: offset);
     widget.controller?.zoom.value = next;
   }
 
@@ -416,10 +467,7 @@ class _MindMapState extends State<MindMap> {
       return;
     }
     final Offset contentPoint = (localPosition - _offset) / _zoom;
-    setState(() {
-      _zoom = next;
-      _offset = localPosition - contentPoint * next;
-    });
+    _setView(zoom: next, offset: localPosition - contentPoint * next);
     widget.controller?.zoom.value = next;
   }
 
@@ -434,12 +482,12 @@ class _MindMapState extends State<MindMap> {
     }
     final bool horizontal =
         HardwareKeyboard.instance.isShiftPressed ||
-            event.scrollDelta.dx.abs() > event.scrollDelta.dy.abs();
-    setState(() {
-      _offset += horizontal
+        event.scrollDelta.dx.abs() > event.scrollDelta.dy.abs();
+    _panBy(
+      horizontal
           ? Offset(-event.scrollDelta.dy, 0)
-          : Offset(0, -event.scrollDelta.dy);
-    });
+          : Offset(0, -event.scrollDelta.dy),
+    );
   }
 
   void _revealNode(_MapNode node) {
@@ -468,7 +516,7 @@ class _MindMapState extends State<MindMap> {
       dy = pad - rect.top;
     }
     if (dx != 0 || dy != 0) {
-      setState(() => _offset += Offset(dx, dy));
+      _panBy(Offset(dx, dy));
     }
   }
 
@@ -539,7 +587,10 @@ class _MindMapState extends State<MindMap> {
       return;
     }
     if (node.expanded && node.children != null && node.children!.isNotEmpty) {
-      setState(() => node.expanded = false);
+      setState(() {
+        node.expanded = false;
+        _layoutDirty = true;
+      });
       return;
     }
     final _MapNode? parent = node.parent;
@@ -644,10 +695,7 @@ class _MindMapState extends State<MindMap> {
           const PopupMenuDivider(),
           PopupMenuItem<String>(
             value: 'add',
-            child: _MenuRow(
-              icon: Icons.add,
-              label: t.tx('add_as_resource'),
-            ),
+            child: _MenuRow(icon: Icons.add, label: t.tx('add_as_resource')),
           ),
         ],
       ],
@@ -675,7 +723,10 @@ class _MindMapState extends State<MindMap> {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         _viewport = constraints.biggest;
-        _layout(context);
+        if (_layoutDirty) {
+          _layout(context);
+          _layoutDirty = false;
+        }
         _scheduleInitialFit();
         final _MapNode? reveal = _nodeToReveal;
         if (reveal != null && _initialFitDone) {
@@ -687,75 +738,98 @@ class _MindMapState extends State<MindMap> {
           });
         }
         return ClipRect(
-          child: Listener(
-            onPointerSignal: _handlePointerSignal,
-            child: Focus(
-              focusNode: _focus,
-              autofocus: true,
-              onKeyEvent: _handleKeyEvent,
-              child: Stack(
-                children: <Widget>[
-                  Positioned.fill(
-                    child: ColoredBox(
-                      color: scheme.surfaceContainerLowest,
+          child: MouseRegion(
+            cursor: _panning
+                ? SystemMouseCursors.grabbing
+                : SystemMouseCursors.grab,
+            child: Listener(
+              onPointerSignal: _handlePointerSignal,
+              child: Focus(
+                focusNode: _focus,
+                autofocus: true,
+                onKeyEvent: _handleKeyEvent,
+                child: Stack(
+                  children: <Widget>[
+                    Positioned.fill(
+                      child: ColoredBox(color: scheme.surfaceContainerLowest),
                     ),
-                  ),
-                  // Background-only gestures: taps/drags on empty canvas pan,
-                  // clear the selection or double-click to fit. Keeping this
-                  // behind the transformed content means node taps do not have
-                  // to wait for this double-tap recogniser.
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: _clearSelection,
-                      onDoubleTap: _fitView,
-                      onPanUpdate: (DragUpdateDetails details) =>
-                          setState(() => _offset += details.delta),
-                    ),
-                  ),
-                  Transform(
-                    transform: Matrix4.identity()
-                      ..setEntry(0, 0, _zoom)
-                      ..setEntry(1, 1, _zoom)
-                      ..setEntry(0, 3, _offset.dx)
-                      ..setEntry(1, 3, _offset.dy),
-                    alignment: Alignment.topLeft,
-                    child: SizedBox(
-                      width: _content.width,
-                      height: _content.height,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: <Widget>[
-                          Positioned.fill(
-                            child: CustomPaint(
-                              painter: _EdgePainter(
-                                edges: _edges,
-                                color: scheme.outlineVariant,
-                              ),
-                            ),
-                          ),
-                          for (final _MapNode node in _visible)
-                            Positioned(
-                              left: node.x,
-                              top: node.y,
-                              width: node.width,
-                              height: node.height,
-                              child: _buildNode(node),
-                            ),
-                          for (final _MapNode node in _visible)
-                            if (node.placeholder == null && node.isFolder)
-                              Positioned(
-                                left: node.x + node.width - _toggleSize / 2,
-                                top: node.y + (node.height - _toggleSize) / 2,
-                                width: _toggleSize,
-                                height: _toggleSize,
-                                child: _buildToggle(t, node),
-                              ),
-                        ],
+                    // Empty canvas: pan, clear the selection or double-click to
+                    // fit. The map content only claims its node cards/toggles
+                    // (the edge painter is transparent to hit tests), so every
+                    // other pixel lands here and starts a drag on the first
+                    // pixel of movement.
+                    Positioned.fill(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        dragStartBehavior: DragStartBehavior.down,
+                        onTap: _clearSelection,
+                        onDoubleTap: _fitView,
+                        onPanStart: (_) => _startPan(),
+                        onPanUpdate: (DragUpdateDetails details) =>
+                            _panBy(details.delta),
+                        onPanEnd: (_) => _stopPan(),
+                        onPanCancel: _stopPan,
                       ),
                     ),
-                  ),
-                ],
+                    // Only the transform depends on zoom/pan, so dragging
+                    // rebuilds this wrapper instead of the node tree; the
+                    // content is repaint-isolated for the same reason.
+                    ValueListenableBuilder<_MapView>(
+                      valueListenable: _view,
+                      child: RepaintBoundary(
+                        key: const ValueKey<String>('mind-map-content'),
+                        child: SizedBox(
+                          width: _content.width,
+                          height: _content.height,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: <Widget>[
+                              Positioned.fill(
+                                child: CustomPaint(
+                                  painter: _EdgePainter(
+                                    edges: _edges,
+                                    color: scheme.outlineVariant,
+                                  ),
+                                ),
+                              ),
+                              for (final _MapNode node in _visible)
+                                Positioned(
+                                  left: node.x,
+                                  top: node.y,
+                                  width: node.width,
+                                  height: node.height,
+                                  child: _buildNode(node),
+                                ),
+                              for (final _MapNode node in _visible)
+                                if (node.placeholder == null && node.isFolder)
+                                  Positioned(
+                                    left: node.x + node.width - _toggleSize / 2,
+                                    top:
+                                        node.y +
+                                        (node.height - _toggleSize) / 2,
+                                    width: _toggleSize,
+                                    height: _toggleSize,
+                                    child: _buildToggle(t, node),
+                                  ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      builder:
+                          (BuildContext context, _MapView view, Widget? child) {
+                            return Transform(
+                              transform: Matrix4.identity()
+                                ..setEntry(0, 0, view.zoom)
+                                ..setEntry(1, 1, view.zoom)
+                                ..setEntry(0, 3, view.offset.dx)
+                                ..setEntry(1, 3, view.offset.dy),
+                              alignment: Alignment.topLeft,
+                              child: child,
+                            );
+                          },
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -775,16 +849,18 @@ class _MindMapState extends State<MindMap> {
     final Color background = selected
         ? scheme.primaryContainer
         : node.isRoot
-            ? scheme.surfaceContainerHigh
-            : hovered
-                ? scheme.surfaceContainerHigh
-                : scheme.surfaceContainerLowest;
-    final Color foreground =
-        selected ? scheme.onPrimaryContainer : scheme.onSurface;
+        ? scheme.surfaceContainerHigh
+        : hovered
+        ? scheme.surfaceContainerHigh
+        : scheme.surfaceContainerLowest;
+    final Color foreground = selected
+        ? scheme.onPrimaryContainer
+        : scheme.onSurface;
     final Color muted = selected
         ? scheme.onPrimaryContainer.withValues(alpha: 0.72)
         : scheme.onSurfaceVariant;
     return MouseRegion(
+      cursor: _panning ? SystemMouseCursors.grabbing : SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hoveredKey = node.key),
       onExit: (_) {
         if (_hoveredKey == node.key) {
@@ -793,8 +869,10 @@ class _MindMapState extends State<MindMap> {
       },
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
+        dragStartBehavior: DragStartBehavior.down,
         // Select on pointer-down so the hover toggle appears immediately; the
-        // tap callback keeps semantics/accessibility working.
+        // tap callback keeps semantics/accessibility working. A drag that
+        // starts on the card pans the canvas instead of opening anything.
         onTapDown: (_) => _selectNode(node),
         onTap: () => _selectNode(node),
         onDoubleTap: node.isRoot
@@ -807,6 +885,10 @@ class _MindMapState extends State<MindMap> {
               },
         onSecondaryTapDown: (TapDownDetails details) =>
             _showNodeMenu(node, details.globalPosition),
+        onPanStart: (_) => _startPan(),
+        onPanUpdate: (DragUpdateDetails details) => _panBy(details.delta),
+        onPanEnd: (_) => _stopPan(),
+        onPanCancel: _stopPan,
         child: AnimatedContainer(
           duration: AppDurations.fast,
           padding: EdgeInsets.symmetric(horizontal: node.isRoot ? 14 : 10),
@@ -832,14 +914,14 @@ class _MindMapState extends State<MindMap> {
                 node.isRoot
                     ? Icons.folder
                     : node.isFile
-                        ? Icons.insert_drive_file_outlined
-                        : Icons.folder_outlined,
+                    ? Icons.insert_drive_file_outlined
+                    : Icons.folder_outlined,
                 size: node.isRoot ? 18 : 15,
                 color: node.isFile
                     ? muted
                     : selected
-                        ? foreground
-                        : scheme.onSurfaceVariant,
+                    ? foreground
+                    : scheme.onSurfaceVariant,
               ),
               const SizedBox(width: 6),
               Flexible(
@@ -867,7 +949,8 @@ class _MindMapState extends State<MindMap> {
 
   Widget _buildToggle(AppStrings t, _MapNode node) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final bool visible = node.key == _hoveredKey ||
+    final bool visible =
+        node.key == _hoveredKey ||
         node.key == _toggleHoverKey ||
         node.key == _selectedKey ||
         node.expanded ||
@@ -876,7 +959,7 @@ class _MindMapState extends State<MindMap> {
       return const SizedBox.shrink();
     }
     return MouseRegion(
-      cursor: SystemMouseCursors.click,
+      cursor: _panning ? SystemMouseCursors.grabbing : SystemMouseCursors.click,
       onEnter: (_) => setState(() => _toggleHoverKey = node.key),
       onExit: (_) {
         if (_toggleHoverKey == node.key) {
@@ -888,9 +971,14 @@ class _MindMapState extends State<MindMap> {
         waitDuration: const Duration(milliseconds: 500),
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
+          dragStartBehavior: DragStartBehavior.down,
           onTap: () {
             unawaited(_toggleNode(node));
           },
+          onPanStart: (_) => _startPan(),
+          onPanUpdate: (DragUpdateDetails details) => _panBy(details.delta),
+          onPanEnd: (_) => _stopPan(),
+          onPanCancel: _stopPan,
           child: Container(
             decoration: BoxDecoration(
               color: scheme.surfaceContainerHighest,
@@ -931,12 +1019,16 @@ class _MindMapState extends State<MindMap> {
       case _PlaceholderKind.loading:
         label = t.tx('loading_children');
       case _PlaceholderKind.error:
-        label = '${t.tx(node.parent!.errorKey ?? 'fs_unreadable')} · ${t.tx('retry')}';
+        label =
+            '${t.tx(node.parent!.errorKey ?? 'fs_unreadable')} · ${t.tx('retry')}';
       case _PlaceholderKind.empty:
         label = t.tx('empty_folder');
       case _PlaceholderKind.more:
         final _MapNode parent = node.parent!;
-        final int remaining = math.max(0, parent.total - (parent.children?.length ?? 0));
+        final int remaining = math.max(
+          0,
+          parent.total - (parent.children?.length ?? 0),
+        );
         label = t.tx('more_items', <Object?>[remaining]);
     }
     final Widget content = Row(
@@ -952,8 +1044,8 @@ class _MindMapState extends State<MindMap> {
             error
                 ? Icons.error_outline
                 : kind == _PlaceholderKind.empty
-                    ? Icons.folder_off_outlined
-                    : Icons.more_horiz,
+                ? Icons.folder_off_outlined
+                : Icons.more_horiz,
             size: 14,
             color: error ? semantic.danger : scheme.onSurfaceVariant,
           ),
@@ -972,24 +1064,44 @@ class _MindMapState extends State<MindMap> {
         ),
       ],
     );
-    return GestureDetector(
-      onTap: error ? () => _retryNode(node.parent!) : null,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: error ? semantic.dangerContainer : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: error ? semantic.danger.withValues(alpha: 0.4) : scheme.outlineVariant,
+    return MouseRegion(
+      cursor: _panning
+          ? SystemMouseCursors.grabbing
+          : (error ? SystemMouseCursors.click : SystemMouseCursors.grab),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        dragStartBehavior: DragStartBehavior.down,
+        onTap: error ? () => _retryNode(node.parent!) : null,
+        onPanStart: (_) => _startPan(),
+        onPanUpdate: (DragUpdateDetails details) => _panBy(details.delta),
+        onPanEnd: (_) => _stopPan(),
+        onPanCancel: _stopPan,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: error ? semantic.dangerContainer : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: error
+                  ? semantic.danger.withValues(alpha: 0.4)
+                  : scheme.outlineVariant,
+            ),
           ),
+          child: content,
         ),
-        child: content,
       ),
     );
   }
 }
 
 enum _PlaceholderKind { loading, error, empty, more }
+
+class _MapView {
+  const _MapView({required this.zoom, required this.offset});
+
+  final double zoom;
+  final Offset offset;
+}
 
 class _MapNode {
   _MapNode({
@@ -1044,6 +1156,12 @@ class _EdgePainter extends CustomPainter {
 
   final List<_Edge> edges;
   final Color color;
+
+  /// Decoration only: never claim pointer events. `RenderCustomPaint` treats a
+  /// null result from the painter as a hit, which used to swallow every drag
+  /// that started inside the map's content rect (the whole visible canvas).
+  @override
+  bool? hitTest(Offset position) => false;
 
   @override
   void paint(Canvas canvas, Size size) {

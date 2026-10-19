@@ -1,4 +1,4 @@
-﻿# 抽屉 Drawer 迁移文档索引
+# 抽屉 Drawer 迁移文档索引
 
 把 `resource_hub.pyw`（Python Tkinter，单文件）迁移为 **Flutter 前端 + Python 后端**的完整记录。
 按顺序阅读：
@@ -28,6 +28,7 @@
 | [`phase20-rename.md`](phase20-rename.md) | 产品改名「常用资源工具」→「抽屉 Drawer」：仅显示名（标题/托盘/菜单文案/扩展名/快捷方式），exe 与数据路径不变 |
 | [`phase21-grid-reorder.md`](phase21-grid-reorder.md) | 网格拖动排序重做：拖动中卡片实时让位 + 180ms 动画 + 虚线占位，松手才保存（对齐列表视图手感） |
 | [`phase22-ai-suggestions.md`](phase22-ai-suggestions.md) | AI 分类建议（实验性）：DeepSeek/OpenAI 兼容端点、仅建议不自动改、DPAPI 加密 key、审查后应用 |
+| [`phase23-mindmap-drag.md`](phase23-mindmap-drag.md) | 思维导图拖动修复：连线层吞掉指针（内容矩形内全拖不动）+ 拖动重建整树导致发涩；命中测试、node 拖动平移、notifier/布局缓存 |
 | [`adr/ADR-001-tray-hotkey-ownership.md`](adr/ADR-001-tray-hotkey-ownership.md) | 托盘/热键归属、导入导出入口、数据覆盖风险 |
 | [`adr/ADR-002-native-shell-ownership.md`](adr/ADR-002-native-shell-ownership.md) | Windows 壳层归属（runner vs 后端） |
 
@@ -42,7 +43,7 @@ Python 后端负责数据读写、全局热键、导入导出与路径操作，�
 # 后端 326 个测试
 cd backend; D:\miniconda3\python.exe -m unittest discover -s tests -t .
 
-# 前端 analyze + 73 个测试
+# 前端 analyze + 75 个测试
 cd ..\app; flutter analyze; flutter test
 
 # 实机壳层（关窗→托盘、热键、二次启动、拖拽)
@@ -62,6 +63,9 @@ D:\miniconda3\python.exe migration\tools\verify_ai_suggest.py
 
 # 端到端双向书签同步（真后端 + 模拟扩展，不启动浏览器）
 D:\miniconda3\python.exe migration\tools\verify_bookmark_extension.py
+
+# 实机思维导图拖动（临时复制发布包 + 像素位移断言；旧包可复现"内容区拖不动"）
+D:\miniconda3\python.exe migration\tools\verify_mind_map_drag.py --build release\ResourceHub-Desktop-20261018-2215
 
 # 浏览器扩展协议自检（不需要浏览器）
 cd bookmark-extension; D:\miniconda3\python.exe check_protocol.py
