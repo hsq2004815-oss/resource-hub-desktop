@@ -30,7 +30,7 @@ websites, local folders and single files.
 
 ## Download
 
-**[⬇ Download Drawer v1.0.4 for Windows (64-bit)](https://github.com/hsq2004815-oss/resource-hub-desktop/releases/latest)**
+**[⬇ Download Drawer v1.0.5 for Windows (64-bit)](https://github.com/hsq2004815-oss/resource-hub-desktop/releases/latest)**
 — ~22 MB zip, unzip the whole folder and run `resource_hub.exe`. No Python or
 runtime install needed. Data stays next to the executable.
 
@@ -43,7 +43,7 @@ It covers installation, adding resources, the folder mind map, quick-panel
 hotkeys, browser bookmark sync, the Explorer context menu, AI suggestions,
 data/backup, shortcuts and troubleshooting.
 
-See [CHANGELOG.md](CHANGELOG.md) for the tagged milestones (`v0.1.0` … `v1.0.2`).
+See [CHANGELOG.md](CHANGELOG.md) for the tagged milestones (`v0.1.0` … `v1.0.5`).
 
 ## Implementations
 
@@ -54,7 +54,7 @@ This repository contains two generations of the app:
 | `app/` + `backend/` | **Current**: Flutter Windows client + headless Python backend, talking JSON Lines over stdio |
 | `resource_hub.pyw` | Legacy single-file Tkinter app, kept for reference and rollback; no longer developed |
 
-## Download / Install
+## Build From Source
 
 Build outputs are **not committed** (`release/` is git-ignored). Build the package
 locally:

@@ -512,6 +512,13 @@ bool FlutterWindow::EnterQuickMode(int logical_width, int logical_height) {
   if (::IsIconic(handle)) {
     ::ShowWindow(handle, SW_RESTORE);
   }
+  // ...and a maximized window ignores SetWindowPos sizing: the HUD request
+  // would be applied to the restore rect instead of 480x600 logical, opening a
+  // full-size panel (Phase 24). Restore it first and remember the state.
+  quick_saved_maximized_ = ::IsZoomed(handle) != FALSE;
+  if (quick_saved_maximized_) {
+    ::ShowWindow(handle, SW_RESTORE);
+  }
   if (!::GetWindowRect(handle, &quick_saved_rect_)) {
     return false;
   }
@@ -606,8 +613,14 @@ void FlutterWindow::ExitQuickMode(int visibility) {
   if (show_window) {
     // Do not steal the foreground on the automatic path: the user likely
     // clicked another window and that is exactly why the HUD is closing.
-    ::ShowWindow(handle, SW_RESTORE);
-    ::ShowWindow(handle, SW_SHOW);
+    if (quick_saved_maximized_) {
+      // The user had the main window maximized before opening the HUD; put it
+      // back the way they left it.
+      ::ShowWindow(handle, SW_SHOWMAXIMIZED);
+    } else {
+      ::ShowWindow(handle, SW_RESTORE);
+      ::ShowWindow(handle, SW_SHOW);
+    }
     if (visibility == 1) {
       ForceForeground();
     }

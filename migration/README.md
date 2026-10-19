@@ -29,6 +29,7 @@
 | [`phase21-grid-reorder.md`](phase21-grid-reorder.md) | 网格拖动排序重做：拖动中卡片实时让位 + 180ms 动画 + 虚线占位，松手才保存（对齐列表视图手感） |
 | [`phase22-ai-suggestions.md`](phase22-ai-suggestions.md) | AI 分类建议（实验性）：DeepSeek/OpenAI 兼容端点、仅建议不自动改、DPAPI 加密 key、审查后应用 |
 | [`phase23-mindmap-drag.md`](phase23-mindmap-drag.md) | 思维导图拖动修复：连线层吞掉指针（内容矩形内全拖不动）+ 拖动重建整树导致发涩；命中测试、node 拖动平移、notifier/布局缓存 |
+| [`phase24-quick-panel-maximized.md`](phase24-quick-panel-maximized.md) | 快速面板尺寸修复：主窗口最大化时快捷键会弹出全屏大小的面板；`IsZoomed` 处理 + 关闭后恢复最大化 |
 | [`adr/ADR-001-tray-hotkey-ownership.md`](adr/ADR-001-tray-hotkey-ownership.md) | 托盘/热键归属、导入导出入口、数据覆盖风险 |
 | [`adr/ADR-002-native-shell-ownership.md`](adr/ADR-002-native-shell-ownership.md) | Windows 壳层归属（runner vs 后端） |
 
@@ -51,6 +52,9 @@ cd ..; D:\miniconda3\python.exe migration\tools\verify_shell.py
 
 # 实机快速面板（三组热键、窗口变身、Esc 还原、托盘内唤醒）
 D:\miniconda3\python.exe migration\tools\verify_quick_panel.py
+
+# 实机快速面板尺寸（普通 / 最大化窗口下都必须是 480×600 HUD；Phase 24）
+D:\miniconda3\python.exe migration\tools\verify_quick_panel_size.py --build release\ResourceHub-Desktop-20261019-0650
 
 # 实机浏览器书签同步（临时复制发布包 + 假浏览器配置，不碰真实数据目录）
 D:\miniconda3\python.exe migration\tools\verify_bookmark_sync.py

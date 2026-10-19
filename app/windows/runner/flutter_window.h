@@ -134,6 +134,10 @@ class FlutterWindow : public Win32Window {
   LONG_PTR quick_saved_style_ = 0;
   LONG_PTR quick_saved_ex_style_ = 0;
   RECT quick_saved_rect_ = {};
+  // True when the main window was maximized before the HUD opened; the HUD
+  // must restore the window first (a maximized window ignores SetWindowPos
+  // sizing) and put it back into the maximized state on exit.
+  bool quick_saved_maximized_ = false;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_
