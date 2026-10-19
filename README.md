@@ -139,7 +139,3 @@ MIT License. Copyright (c) 2026 黄双全 (Huang Shuangquan).
 
 Free to use, copy, modify, distribute and commercialize, provided the copyright
 notice is retained. See [LICENSE](LICENSE) for the full text.
-
-> 历史说明：v1.0.3 曾短暂改用「保留所有权利 + 禁止商业使用」；自 v1.0.4 起恢复
-> MIT 协议。The no-commercial terms only ever applied to the v1.0.3 tag; the
-> current and future versions are MIT-licensed again.
