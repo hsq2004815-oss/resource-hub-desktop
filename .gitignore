@@ -18,6 +18,8 @@ resource_hub_launcher.log
 /folders.json
 /settings.json
 /.resourcehub-meta.json
+# ...and the .bak copies the data store keeps next to them
+/*.bak
 
 # Packaged releases (large binaries; rebuild with build-flutter-release.ps1)
 release/
@@ -25,5 +27,6 @@ release/
 # Local tooling caches
 .codegraph/
 .workbuddy-ai/
+/.vscode/
 # Phase 22: DPAPI-encrypted AI key (never commit)
 /.resourcehub-ai-key
