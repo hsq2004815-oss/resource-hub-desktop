@@ -30,6 +30,7 @@
 | [`phase22-ai-suggestions.md`](phase22-ai-suggestions.md) | AI 分类建议（实验性）：DeepSeek/OpenAI 兼容端点、仅建议不自动改、DPAPI 加密 key、审查后应用 |
 | [`phase23-mindmap-drag.md`](phase23-mindmap-drag.md) | 思维导图拖动修复：连线层吞掉指针（内容矩形内全拖不动）+ 拖动重建整树导致发涩；命中测试、node 拖动平移、notifier/布局缓存 |
 | [`phase24-quick-panel-maximized.md`](phase24-quick-panel-maximized.md) | 快速面板尺寸修复：主窗口最大化时快捷键会弹出全屏大小的面板；`IsZoomed` 处理 + 关闭后恢复最大化 |
+| [`phase25-chrome-account-bookmarks.md`](phase25-chrome-account-bookmarks.md) | Chrome 书签同步修复：登录账号后书签写在 `AccountBookmarks`，旧代码只读 `Bookmarks`；两种文件合并读取 |
 | [`adr/ADR-001-tray-hotkey-ownership.md`](adr/ADR-001-tray-hotkey-ownership.md) | 托盘/热键归属、导入导出入口、数据覆盖风险 |
 | [`adr/ADR-002-native-shell-ownership.md`](adr/ADR-002-native-shell-ownership.md) | Windows 壳层归属（runner vs 后端） |
 
@@ -41,7 +42,7 @@ Python 后端负责数据读写、全局热键、导入导出与路径操作，�
 ## 验证入口
 
 ```powershell
-# 后端 326 个测试
+# 后端 329 个测试
 cd backend; D:\miniconda3\python.exe -m unittest discover -s tests -t .
 
 # 前端 analyze + 75 个测试

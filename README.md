@@ -160,7 +160,7 @@ A Chinese user manual ships with the app and is also in this repository:
 It covers installation, adding resources, the folder mind map, quick-panel hotkeys, bookmark sync,
 the Explorer menu, AI suggestions, data and backups, and troubleshooting.
 
-See [CHANGELOG.md](CHANGELOG.md) for the tagged milestones (`v0.1.0` … `v1.0.5`).
+See [CHANGELOG.md](CHANGELOG.md) for the tagged milestones (`v0.1.0` … `v1.0.6`).
 
 ## Build from source
 
@@ -206,10 +206,10 @@ cd app
 flutter test                                  # 75 tests: widgets, protocol, JSON
 
 cd backend
-python -m unittest discover -s tests -t .     # 326 tests (1 skipped: symlink)
+python -m unittest discover -s tests -t .     # 329 tests (1 skipped: symlink)
 ```
 
-That is 400 passing tests across the Flutter client and the Python backend.
+That is 403 passing tests across the Flutter client and the Python backend.
 
 ## Under the hood
 

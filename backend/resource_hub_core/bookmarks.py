@@ -2,11 +2,12 @@
 
 The backend imports the user's browser bookmarks into ``sites.json`` without a
 browser extension and without network access: it discovers the browser profile
-directories, parses the ``Bookmarks`` JSON file Chrome and Edge share, and
-appends the new links once.
+directories, parses the bookmark JSON file Chrome and Edge share — ``Bookmarks``
+for signed-out profiles and ``AccountBookmarks`` for Chrome profiles signed in
+with bookmark sync — and appends the new links once.
 
-Browser files are **only ever read** — never modified. Chrome rewrites its
-``Bookmarks`` file in place on every change, so a read that lands mid-write can
+Browser files are **only ever read** — never modified. Chrome and Edge rewrite
+their bookmark file in place on every change, so a read that lands mid-write can
 see invalid JSON; such a read is retried once before the file is treated as
 unreadable instead of raising.
 
@@ -69,7 +70,11 @@ DEFAULT_REDISCOVER_INTERVAL = 30.0
 CHANGE_DEBOUNCE_SECONDS = 0.6
 READ_RETRY_DELAY_SECONDS = 0.06
 
-_BOOKMARKS_FILENAME = "Bookmarks"
+#: Bookmark files a profile directory may contain, most authoritative first.
+#: Chrome writes ``AccountBookmarks`` for profiles signed in with bookmark sync
+#: (it may not write ``Bookmarks`` at all); Edge and signed-out profiles use
+#: ``Bookmarks``.
+_PROFILE_BOOKMARK_FILENAMES = ("AccountBookmarks", "Bookmarks")
 _META_BOOKMARKS_KEY = "bookmarks"
 _META_SEEN_KEY = "seenUrls"
 _META_LAST_SYNC_KEY = "lastSyncAt"
@@ -80,10 +85,20 @@ _PROFILE_SORT_LAST = 1 << 30
 # --- data objects ----------------------------------------------------------
 @dataclass(frozen=True, slots=True)
 class BookmarkProfile:
-    """One browser profile and the ``Bookmarks`` file that owns it."""
+    """One browser profile and the bookmark files that own it.
+
+    A signed-in Chrome profile can keep bookmarks in ``AccountBookmarks`` *and*
+    ``Bookmarks`` at the same time (the UI merges both), so a profile collects
+    every readable file and the import de-duplicates the URLs across them.
+    """
 
     label: str
-    path: Path
+    paths: tuple[Path, ...]
+
+    @property
+    def path(self) -> Path:
+        """The primary bookmark file (first one discovered)."""
+        return self.paths[0]
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,15 +242,22 @@ def parse_bookmarks(path: Path) -> list[BookmarkEntry] | None:
 
 
 # --- profile discovery -----------------------------------------------------
-def _is_readable_bookmarks(profile_dir: Path) -> Path | None:
-    """The profile's ``Bookmarks`` file when it exists and can be read."""
-    candidate = profile_dir / _BOOKMARKS_FILENAME
-    try:
-        if candidate.is_file() and os.access(candidate, os.R_OK):
-            return candidate
-    except OSError:
-        return None
-    return None
+def _readable_bookmark_files(profile_dir: Path) -> list[Path]:
+    """Every readable bookmark JSON file in ``profile_dir``, primary first.
+
+    ``AccountBookmarks`` comes first: a Chrome profile signed in with bookmark
+    sync keeps its bookmarks there and may not write ``Bookmarks`` at all. Both
+    files are returned when present, because Chrome merges them in its own UI.
+    """
+    files: list[Path] = []
+    for name in _PROFILE_BOOKMARK_FILENAMES:
+        candidate = profile_dir / name
+        try:
+            if candidate.is_file() and os.access(candidate, os.R_OK):
+                files.append(candidate)
+        except OSError:
+            continue
+    return files
 
 
 def _profile_sort_key(directory: Path) -> tuple[int, int, str]:
@@ -269,11 +291,11 @@ def _scan_user_data(root: Path, label_prefix: str) -> list[BookmarkProfile]:
         return []
     profiles: list[BookmarkProfile] = []
     for directory in sorted(directories, key=_profile_sort_key):
-        bookmarks = _is_readable_bookmarks(directory)
-        if bookmarks is None:
+        bookmarks = _readable_bookmark_files(directory)
+        if not bookmarks:
             continue
         profiles.append(
-            BookmarkProfile(f"{label_prefix} · {directory.name}", bookmarks)
+            BookmarkProfile(f"{label_prefix} · {directory.name}", tuple(bookmarks))
         )
     return profiles
 
@@ -322,8 +344,9 @@ def browser_roots() -> list[tuple[str, Path]]:
 def _custom_profiles(settings: Settings) -> list[BookmarkProfile]:
     """Profiles from ``Settings.bookmark_custom_dir``; invalid paths are ignored.
 
-    Accepted shapes: a ``Bookmarks`` file, a profile directory containing one,
-    or a ``User Data`` directory whose profiles are scanned.
+    Accepted shapes: a ``Bookmarks`` / ``AccountBookmarks`` file, a profile
+    directory containing one, or a ``User Data`` directory whose profiles are
+    scanned.
     """
     raw = str(settings.bookmark_custom_dir or "").strip()
     if not raw:
@@ -331,14 +354,15 @@ def _custom_profiles(settings: Settings) -> list[BookmarkProfile]:
     path = Path(os.path.expandvars(raw)).expanduser()
     try:
         if path.is_file():
-            if path.name.casefold() == _BOOKMARKS_FILENAME.casefold():
-                return [BookmarkProfile(CUSTOM_PROFILE_LABEL, path)]
+            known = {name.casefold() for name in _PROFILE_BOOKMARK_FILENAMES}
+            if path.name.casefold() in known:
+                return [BookmarkProfile(CUSTOM_PROFILE_LABEL, (path,))]
             return []
         if not path.is_dir():
             return []
-        direct = _is_readable_bookmarks(path)
-        if direct is not None:
-            return [BookmarkProfile(CUSTOM_PROFILE_LABEL, direct)]
+        direct = _readable_bookmark_files(path)
+        if direct:
+            return [BookmarkProfile(CUSTOM_PROFILE_LABEL, tuple(direct))]
         return _scan_user_data(path, CUSTOM_PROFILE_LABEL)
     except OSError:
         return []
@@ -347,7 +371,9 @@ def _custom_profiles(settings: Settings) -> list[BookmarkProfile]:
 def _add_profile(
     profiles: list[BookmarkProfile], seen: set[str], profile: BookmarkProfile
 ) -> None:
-    key = os.path.normcase(os.path.abspath(str(profile.path)))
+    key = os.pathsep.join(
+        os.path.normcase(os.path.abspath(str(path))) for path in profile.paths
+    )
     if key in seen:
         return
     seen.add(key)
@@ -376,12 +402,21 @@ def collect_bookmarks(settings: Settings) -> BookmarkCollection:
     entries: list[tuple[str, str, str, str]] = []
     profiles: list[CollectedProfile] = []
     for profile in discover_profiles(settings):
-        parsed = parse_bookmarks(profile.path)
-        if parsed is None:
+        parsed_entries: list[BookmarkEntry] = []
+        read_any = False
+        for path in profile.paths:
+            parsed = parse_bookmarks(path)
+            if parsed is None:
+                continue
+            read_any = True
+            parsed_entries.extend(parsed)
+        if not read_any:
             continue
-        for entry in parsed:
+        for entry in parsed_entries:
             entries.append((profile.label, entry.name, entry.url, entry.category))
-        profiles.append(CollectedProfile(profile.label, profile.path, len(parsed)))
+        profiles.append(
+            CollectedProfile(profile.label, profile.path, len(parsed_entries))
+        )
     return BookmarkCollection(tuple(entries), tuple(profiles), len(entries))
 
 
@@ -650,9 +685,10 @@ class BookmarkWatcher:
     def _snapshot(self, settings: Settings) -> dict[str, tuple[int, int]]:
         snapshot: dict[str, tuple[int, int]] = {}
         for profile in discover_profiles(settings):
-            stamp = self._stat(str(profile.path))
-            if stamp is not None:
-                snapshot[str(profile.path)] = stamp
+            for path in profile.paths:
+                stamp = self._stat(str(path))
+                if stamp is not None:
+                    snapshot[str(path)] = stamp
         return snapshot
 
     @staticmethod

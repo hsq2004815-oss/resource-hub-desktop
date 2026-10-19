@@ -143,7 +143,7 @@
 内容覆盖安装、添加资源、文件夹思维导图、快速面板快捷键、浏览器书签同步、右键菜单、AI 分类建议、
 数据与备份、常见问题排查。
 
-版本更新见 [CHANGELOG.md](CHANGELOG.md)（从 `v0.1.0` 到 `v1.0.5`）。
+版本更新见 [CHANGELOG.md](CHANGELOG.md)（从 `v0.1.0` 到 `v1.0.6`）。
 
 ## 从源码构建
 
@@ -187,10 +187,10 @@ cd app
 flutter test                                  # 75 个测试：组件、协议、JSON
 
 cd backend
-python -m unittest discover -s tests -t .     # 326 个测试（跳过 1 个：符号链接）
+python -m unittest discover -s tests -t .     # 329 个测试（跳过 1 个：符号链接）
 ```
 
-Flutter 客户端 + Python 后端合计 400 个通过的测试。
+Flutter 客户端 + Python 后端合计 403 个通过的测试。
 
 ## 这个项目是怎么来的
 

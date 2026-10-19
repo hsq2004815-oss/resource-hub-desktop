@@ -1,4 +1,4 @@
-﻿"""Tests for the Chrome/Edge bookmark bridge (Phase 17).
+"""Tests for the Chrome/Edge bookmark bridge (Phase 17).
 
 The real browser data directories are never touched: every test points
 ``RH_BROWSER_DATA_DIRS`` at a temporary fixture, which is exactly the override
@@ -66,10 +66,15 @@ def bookmarks_document(
     return {"roots": roots}
 
 
-def write_profile(root: Path, profile: str, payload: Mapping[str, Any]) -> Path:
+def write_profile(
+    root: Path,
+    profile: str,
+    payload: Mapping[str, Any],
+    filename: str = "Bookmarks",
+) -> Path:
     directory = root / profile
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / "Bookmarks"
+    path = directory / filename
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     return path
 
@@ -293,6 +298,29 @@ class ProfileDiscoveryTests(EnvFixtureTestCase):
         )
         self.assertEqual(len({profile.path for profile in profiles}), 4)
 
+    def test_account_bookmarks_profile_is_discovered(self) -> None:
+        path = write_profile(
+            self.chrome_root, "Profile 1", sync_fixture_document(), "AccountBookmarks"
+        )
+
+        profiles = discover_profiles(Settings())
+
+        self.assertEqual([profile.label for profile in profiles], ["Chrome · Profile 1"])
+        self.assertEqual(list(profiles[0].paths), [path])
+
+    def test_account_and_local_bookmarks_are_merged_per_profile(self) -> None:
+        local = write_profile(self.chrome_root, "Default", mixed_document())
+        account = write_profile(
+            self.chrome_root, "Default", sync_fixture_document(), "AccountBookmarks"
+        )
+
+        profiles = discover_profiles(Settings())
+
+        self.assertEqual([profile.label for profile in profiles], ["Chrome · Default"])
+        self.assertEqual(set(profiles[0].paths), {account, local})
+        # Both files are parsed; sync de-duplicates the overlapping URLs.
+        self.assertEqual(collect_bookmarks(Settings()).total, 13)
+
     def test_browsers_are_ordered_chrome_then_edge(self) -> None:
         self._env.stop()
         self._env = mock.patch.dict(
@@ -370,6 +398,20 @@ class CustomDirectoryTests(EnvFixtureTestCase):
         profiles = discover_profiles(Settings(bookmark_custom_dir=str(directory)))
 
         self.assertEqual([profile.label for profile in profiles], [CUSTOM_LABEL])
+
+    def test_account_bookmarks_file_path(self) -> None:
+        path = write_profile(
+            self.base / "custom",
+            "Profile X",
+            sync_fixture_document(),
+            "AccountBookmarks",
+        )
+
+        profiles = discover_profiles(Settings(bookmark_custom_dir=str(path)))
+
+        self.assertEqual(len(profiles), 1)
+        self.assertEqual(profiles[0].label, CUSTOM_LABEL)
+        self.assertEqual(profiles[0].path, path)
 
     def test_user_data_directory_scans_profiles(self) -> None:
         root = self.base / "custom"
