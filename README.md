@@ -26,6 +26,15 @@ websites, local folders and single files.
 - Chinese / English UI, light / dark theme
 - Path health check, open, reveal in Explorer
 
+## User Guide
+
+A Chinese user manual is included with the app:
+[抽屉使用说明.docx](docs/抽屉使用说明.docx) /
+[PDF](docs/抽屉使用说明.pdf).
+It covers installation, adding resources, the folder mind map, quick-panel
+hotkeys, browser bookmark sync, the Explorer context menu, AI suggestions,
+data/backup, shortcuts and troubleshooting.
+
 ## Implementations
 
 This repository contains two generations of the app:
