@@ -62,13 +62,16 @@ class Site:
     note: str = ""
     favorite: bool = False
     created_at: str = ""
+    #: Browser id used to open this site (``chrome`` / ``edge`` / …); empty means
+    #: the system default browser. Imported bookmarks keep their origin.
+    browser: str = ""
 
     @property
     def target(self) -> str:
         return self.url
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "id": self.id,
             "name": self.name,
             "url": self.url,
@@ -77,6 +80,9 @@ class Site:
             "favorite": self.favorite,
             "createdAt": self.created_at,
         }
+        if self.browser:
+            payload["browser"] = self.browser
+        return payload
 
     @classmethod
     def normalize(cls, raw: Mapping[str, Any]) -> Site:
@@ -88,6 +94,7 @@ class Site:
             note=str(raw.get("note") or ""),
             favorite=bool(raw.get("favorite")),
             created_at=str(raw.get("createdAt") or now_iso()),
+            browser=str(raw.get("browser") or "").strip().casefold(),
         )
 
     @staticmethod

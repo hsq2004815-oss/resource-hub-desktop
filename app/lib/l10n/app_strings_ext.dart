@@ -70,6 +70,8 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
     'settings_mouse_side_buttons': '鼠标侧键',
     'settings_mouse_side_buttons_hint': '后侧键打开网站面板，前侧键打开文件夹面板；'
         '开启后会接管鼠标的后退 / 前进键。',
+    'open_with': '打开方式',
+    'open_with_default': '系统默认浏览器',
     'quick_search_links': '搜索网站、网址、分类…',
     'quick_search_folders': '搜索资源、路径、分类…',
     'quick_switch': '切换树（Tab）',
@@ -212,6 +214,8 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
     'settings_mouse_side_buttons_hint':
         'Back button opens the web links panel, forward opens the folders '
         'panel. When on, Drawer takes over the mouse back / forward buttons.',
+    'open_with': 'Open with',
+    'open_with_default': 'System default browser',
     'quick_search_links': 'Search sites, URLs, categories…',
     'quick_search_folders': 'Search resources, paths, categories…',
     'quick_switch': 'Switch tree (Tab)',

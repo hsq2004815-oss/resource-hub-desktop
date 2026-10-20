@@ -67,6 +67,27 @@ class ResourceListPage {
   }
 }
 
+/// One installed browser for the per-site "open with" choice.
+class BrowserInfo {
+  const BrowserInfo({
+    required this.id,
+    required this.name,
+    required this.path,
+  });
+
+  final String id;
+  final String name;
+  final String path;
+
+  factory BrowserInfo.fromJson(Map<String, dynamic> json) {
+    return BrowserInfo(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      path: json['path'] as String? ?? '',
+    );
+  }
+}
+
 /// Outcome of `resources.checkPaths`.
 class PathCheckOutcome {
   const PathCheckOutcome({

@@ -117,6 +117,21 @@ class AddLinkTests(ServiceTestCase):
         payload = json.loads((self.dir / "sites.json").read_text(encoding="utf-8"))
         self.assertEqual(payload[0]["name"], "Persisted")
 
+    def test_browser_is_stored_and_persisted(self) -> None:
+        item = self.service.add(
+            "links", name="With Chrome", target="https://x.example", browser="Chrome"
+        )
+        self.assertEqual(item.browser, "chrome")
+        reloaded = ResourceService(self.dir)
+        reloaded.load()
+        self.assertEqual(reloaded.get("links", item.id).browser, "chrome")
+        self.assertEqual(
+            self.service.add(
+                "links", name="Plain", target="https://p.example"
+            ).browser,
+            "",
+        )
+
     def test_validation_order(self) -> None:
         with self.assertRaises(ValidationError) as ctx:
             self.service.add("links", name="  ", target="https://a.example")
@@ -174,8 +189,8 @@ class SyncedAddTests(ServiceTestCase):
         created = self.service.add_synced(
             "links",
             [
-                ("Home", "https://home.example/", "书签栏"),
-                ("Docs", "https://docs.example/", None),
+                ("Home", "https://home.example/", "书签栏", "chrome"),
+                ("Docs", "https://docs.example/", None, ""),
             ],
         )
 
@@ -186,22 +201,25 @@ class SyncedAddTests(ServiceTestCase):
         )
         self.assertEqual(created[0].category, "书签栏")
         self.assertEqual(created[1].category, UNCATEGORIZED)
+        self.assertEqual(created[0].browser, "chrome")
+        self.assertEqual(created[1].browser, "")
 
     def test_skips_invalid_and_duplicate_entries(self) -> None:
         created = self.service.add_synced(
             "links",
             [
-                ("", "https://nameless.example/", None),
-                ("FTP", "ftp://files.example/", None),
-                ("GitHub", "https://github.com/", None),  # seeded sample
-                ("First", "https://same.example/", None),
-                ("Second", "https://SAME.example", None),  # in-batch duplicate
-                ("Ok", "https://ok.example/", "工作"),
+                ("", "https://nameless.example/", None, ""),
+                ("FTP", "ftp://files.example/", None, ""),
+                ("GitHub", "https://github.com/", None, ""),  # seeded sample
+                ("First", "https://same.example/", None, "edge"),
+                ("Second", "https://SAME.example", None, "edge"),  # in-batch duplicate
+                ("Ok", "https://ok.example/", "工作", ""),
             ],
         )
 
         self.assertEqual([item.name for item in created], ["First", "Ok"])
         self.assertEqual(created[0].url, "https://same.example/")
+        self.assertEqual(created[0].browser, "edge")
         self.assertEqual(created[1].category, "工作")
 
     def test_writes_the_file_once_per_batch(self) -> None:
@@ -209,8 +227,8 @@ class SyncedAddTests(ServiceTestCase):
             self.service.add_synced(
                 "links",
                 [
-                    ("A", "https://a.example/", None),
-                    ("B", "https://b.example/", None),
+                    ("A", "https://a.example/", None, ""),
+                    ("B", "https://b.example/", None, ""),
                 ],
             )
 
@@ -221,7 +239,7 @@ class SyncedAddTests(ServiceTestCase):
     def test_no_write_when_nothing_was_accepted(self) -> None:
         with mock.patch("resource_hub_core.service.JsonFileStore.save") as saver:
             created = self.service.add_synced(
-                "links", [("FTP", "ftp://files.example/", None)]
+                "links", [("FTP", "ftp://files.example/", None, "")]
             )
 
         self.assertEqual(created, [])
@@ -231,7 +249,7 @@ class SyncedAddTests(ServiceTestCase):
         target = self.make_dir("synced-folder")
 
         created = self.service.add_synced(
-            "folders", [("Synced", str(target), None)]
+            "folders", [("Synced", str(target), None, "")]
         )
 
         self.assertEqual([item.name for item in created], ["Synced"])
@@ -293,6 +311,23 @@ class UpdateTests(ServiceTestCase):
         self.service.add("links", name="B", target="https://b.example")
         with self.assertRaises(DuplicateError):
             self.service.update("links", first.id, name="A", target="https://b.example")
+
+    def test_update_keeps_or_changes_browser(self) -> None:
+        item = self.service.add(
+            "links", name="A", target="https://a.example", browser="chrome"
+        )
+        kept = self.service.update(
+            "links", item.id, name="A", target="https://a.example"
+        )
+        self.assertEqual(kept.browser, "chrome")
+        changed = self.service.update(
+            "links", item.id, name="A", target="https://a.example", browser="edge"
+        )
+        self.assertEqual(changed.browser, "edge")
+        cleared = self.service.update(
+            "links", item.id, name="A", target="https://a.example", browser=""
+        )
+        self.assertEqual(cleared.browser, "")
 
 
 class DeleteAndFavoriteTests(ServiceTestCase):

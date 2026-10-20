@@ -27,6 +27,7 @@ import '../../l10n/app_strings_ext.dart';
 import '../../l10n/strings_scope.dart';
 import '../../models/resource_item.dart';
 import '../../platform/backend_client.dart';
+import '../../widgets/site_icon.dart';
 
 /// Which tree the quick panel is showing.
 enum QuickPanelKind {
@@ -43,8 +44,10 @@ class QuickPanel extends StatefulWidget {
     required this.kind,
     required this.links,
     required this.folders,
+    this.browsers = const <BrowserInfo>[],
     required this.loadChildren,
     required this.onOpenItem,
+    this.onOpenWith,
     required this.onOpenPath,
     required this.onSwitchKind,
     required this.onClose,
@@ -58,6 +61,13 @@ class QuickPanel extends StatefulWidget {
   final List<ResourceItem> folders;
   final Future<FsListing> Function(String path) loadChildren;
   final ValueChanged<ResourceItem> onOpenItem;
+
+  /// Right-click a link row: opens it in the picked browser (empty id = system
+  /// default). Null hides the context menu.
+  final void Function(ResourceItem item, String browserId)? onOpenWith;
+
+  /// Installed browsers for the right-click "open with" menu.
+  final List<BrowserInfo> browsers;
 
   /// Opens a raw filesystem entry (file) with the default handler.
   final ValueChanged<String> onOpenPath;
@@ -435,6 +445,37 @@ class _QuickPanelState extends State<QuickPanel> {
     }
     if (row.path != null) {
       widget.onOpenPath(row.path!);
+    }
+  }
+
+  /// Right-click menu for a link row: open it once in the picked browser.
+  Future<void> _showOpenWithMenu(
+    ResourceItem item,
+    Offset position,
+    AppStrings t,
+  ) async {
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final String? choice = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: <PopupMenuEntry<String>>[
+        PopupMenuItem<String>(
+          value: '',
+          child: Text(t.tx('open_with_default')),
+        ),
+        for (final BrowserInfo browser in widget.browsers)
+          PopupMenuItem<String>(
+            value: browser.id,
+            child: Text(browser.name),
+          ),
+      ],
+    );
+    if (choice != null && mounted) {
+      widget.onOpenWith!(item, choice);
     }
   }
 
@@ -851,6 +892,16 @@ class _QuickPanelState extends State<QuickPanel> {
             splashColor: Colors.transparent,
             splashFactory: NoSplash.splashFactory,
             onTap: () => _activateRow(row, t),
+            onSecondaryTapDown: row.item?.kind == ResourceKind.link &&
+                    widget.onOpenWith != null
+                ? (TapDownDetails details) => unawaited(
+                      _showOpenWithMenu(
+                        row.item!,
+                        details.globalPosition,
+                        t,
+                      ),
+                    )
+                : null,
             child: AnimatedContainer(
               duration: AppDurations.fast,
               constraints: const BoxConstraints(minHeight: 32),
@@ -885,11 +936,18 @@ class _QuickPanelState extends State<QuickPanel> {
                             ),
                           )
                         : Center(
-                            child: Icon(
-                              _iconFor(row),
-                              size: 15,
-                              color: scheme.onSurfaceVariant,
-                            ),
+                            child: row.item == null
+                                ? Icon(
+                                    _iconFor(row),
+                                    size: 15,
+                                    color: scheme.onSurfaceVariant,
+                                  )
+                                : SiteIcon(
+                                    item: row.item!,
+                                    fallback: _iconFor(row),
+                                    size: 16,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
                           ),
                   ),
                   const SizedBox(width: AppSpacing.xs),

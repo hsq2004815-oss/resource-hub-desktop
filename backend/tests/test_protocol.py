@@ -15,6 +15,7 @@ from unittest import mock
 
 from resource_hub_core.bookmark_bridge import BookmarkBridge
 from resource_hub_core.bookmarks import BROWSER_DATA_DIRS_ENV
+from resource_hub_core.browsers import Browser
 from resource_hub_core.protocol import PROTOCOL_VERSION, JsonLinesServer
 
 
@@ -89,6 +90,8 @@ class HelloTests(ProtocolTestCase):
         self.assertIn("hotkey.start", result["methods"])
         self.assertIn("bookmarks.status", result["methods"])
         self.assertIn("bookmarks.sync", result["methods"])
+        self.assertIn("favicons.map", result["methods"])
+        self.assertIn("favicons.refresh", result["methods"])
 
     def test_hello_on_corrupt_data(self) -> None:
         (self.dir / "sites.json").write_text("[broken", encoding="utf-8")
@@ -97,6 +100,35 @@ class HelloTests(ProtocolTestCase):
         self.assertTrue(frame["ok"])
         self.assertEqual(frame["result"]["dataStatus"], "corrupt")
         self.assertIn("invalid JSON", frame["result"]["loadError"])
+
+
+class FaviconTests(ProtocolTestCase):
+    def test_map_reports_cached_icons(self) -> None:
+        icons_dir = self.dir / "favicons"
+        icons_dir.mkdir()
+        (icons_dir / "abc.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (icons_dir / "index.json").write_text(
+            json.dumps({"version": 1, "icons": {"example.com": "abc.png"}}),
+            encoding="utf-8",
+        )
+        frame = self.call("favicons.map")
+        self.assertTrue(frame["ok"])
+        self.assertEqual(
+            frame["result"]["icons"],
+            {"example.com": str(icons_dir / "abc.png")},
+        )
+
+    def test_refresh_returns_the_cached_map_and_does_not_block(self) -> None:
+        # The background fetch is not exercised here: it would open sockets.
+        # `test_favicons.py` covers downloading against a local HTTP server.
+        with mock.patch("resource_hub_core.protocol.Dispatcher._kick_favicons"):
+            frames = self.run_frames(
+                [{"id": 7, "method": "favicons.refresh", "params": {}}]
+            )
+        responses = [frame for frame in frames if frame.get("id") == 7]
+        self.assertEqual(len(responses), 1, frames)
+        self.assertTrue(responses[0]["ok"])
+        self.assertEqual(responses[0]["result"], {"icons": {}})
 
 
 class ResourceTests(ProtocolTestCase):
@@ -242,7 +274,86 @@ class ResourceTests(ProtocolTestCase):
         with mock.patch("resource_hub_core.protocol.open_link") as opener:
             frame = self.call("resources.open", {"mode": "links", "id": item_id})
         self.assertTrue(frame["ok"])
-        opener.assert_called_once_with("https://a.test")
+        opener.assert_called_once_with("https://a.test", None)
+
+    def test_open_link_uses_the_site_browser(self) -> None:
+        item_id = self.call(
+            "resources.add",
+            {
+                "mode": "links",
+                "name": "A",
+                "target": "https://a.test",
+                "browser": "chrome",
+            },
+        )["result"]["item"]["id"]
+        fake = Browser("chrome", "Google Chrome", r"C:\chrome.exe")
+        with (
+            mock.patch("resource_hub_core.protocol.open_link") as opener,
+            mock.patch(
+                "resource_hub_core.protocol.find_browser", return_value=fake
+            ) as finder,
+        ):
+            frame = self.call("resources.open", {"mode": "links", "id": item_id})
+        self.assertTrue(frame["ok"])
+        finder.assert_called_once_with("chrome")
+        opener.assert_called_once_with("https://a.test", fake)
+
+    def test_open_link_browser_override_wins(self) -> None:
+        item_id = self.call(
+            "resources.add",
+            {
+                "mode": "links",
+                "name": "A",
+                "target": "https://a.test",
+                "browser": "chrome",
+            },
+        )["result"]["item"]["id"]
+        fake = Browser("edge", "Microsoft Edge", r"C:\msedge.exe")
+        with (
+            mock.patch("resource_hub_core.protocol.open_link") as opener,
+            mock.patch(
+                "resource_hub_core.protocol.find_browser", return_value=fake
+            ) as finder,
+        ):
+            self.call(
+                "resources.open",
+                {"mode": "links", "id": item_id, "browser": "edge"},
+            )
+        finder.assert_called_once_with("edge")
+        opener.assert_called_once_with("https://a.test", fake)
+
+    def test_update_sets_the_site_browser(self) -> None:
+        item_id = self.call(
+            "resources.add", {"mode": "links", "name": "A", "target": "https://a.test"}
+        )["result"]["item"]["id"]
+        updated = self.call(
+            "resources.update",
+            {
+                "mode": "links",
+                "id": item_id,
+                "name": "A",
+                "target": "https://a.test",
+                "browser": "edge",
+            },
+        )["result"]["item"]
+        self.assertEqual(updated["browser"], "edge")
+        # Omitting the key keeps the stored choice.
+        kept = self.call(
+            "resources.update",
+            {"mode": "links", "id": item_id, "name": "A2", "target": "https://a.test"},
+        )["result"]["item"]
+        self.assertEqual(kept["browser"], "edge")
+
+    def test_browsers_list_returns_installed_browsers(self) -> None:
+        fake = [Browser("chrome", "Google Chrome", r"C:\chrome.exe")]
+        with mock.patch(
+            "resource_hub_core.protocol.installed_browsers", return_value=fake
+        ):
+            result = self.call("browsers.list")["result"]
+        self.assertEqual(
+            result["browsers"],
+            [{"id": "chrome", "name": "Google Chrome", "path": r"C:\chrome.exe"}],
+        )
 
     def test_open_missing_folder_reports_operation_failure(self) -> None:
         target = self.dir / "gone-soon"

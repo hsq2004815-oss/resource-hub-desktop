@@ -478,15 +478,29 @@ class BookmarkSyncEngineTests(EnvFixtureTestCase):
             [item.name for item in items[2:]],
             ["Home", "Python", "PyPI", "Docs", "Mobile"],
         )
-        # Categories survive the round trip into sites.json.
+        # Categories survive the round trip into sites.json, and imported links
+        # remember which browser they came from.
         by_name = {item.name: item for item in items}
         self.assertEqual(by_name["Home"].category, BOOKMARK_BAR_CATEGORY)
         self.assertEqual(by_name["PyPI"].category, "开发/工具")
         self.assertEqual(by_name["Docs"].category, OTHER_BOOKMARKS_CATEGORY)
+        self.assertEqual(by_name["Home"].browser, "chrome")
 
         stored = json.loads((self.app_dir / "sites.json").read_text(encoding="utf-8"))
         stored_names = [entry["name"] for entry in stored]
         self.assertEqual(stored_names[-1], "Mobile")
+
+    def test_edge_bookmarks_remember_the_edge_browser(self) -> None:
+        self._env.stop()
+        self._env = mock.patch.dict(
+            os.environ, {BROWSER_DATA_DIRS_ENV: str(self.edge_root)}
+        )
+        self._env.start()
+        write_profile(self.edge_root, "Default", sync_fixture_document())
+
+        self.engine.sync(self.service, self.settings)
+
+        self.assertEqual(self.service.items("links")[-1].browser, "edge")
 
     def test_second_sync_adds_nothing(self) -> None:
         write_profile(self.chrome_root, "Default", sync_fixture_document())

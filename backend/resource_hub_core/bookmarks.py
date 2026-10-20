@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
+from .browsers import browser_id_for_label
 from .normalize import now_iso
 from .service import ORDER_META_FILENAME, ORDER_VERSION, ResourceService
 from .settings import Settings
@@ -532,14 +533,18 @@ class BookmarkSyncEngine:
         seen, _last_sync = self._parse_state(meta)
         existing = {dedup_key(item.target) for item in service.items("links")}
 
-        batch: list[tuple[str, str, str | None]] = []
+        browser_ids = {
+            profile.label: browser_id_for_label(profile.label)
+            for profile in collection.profiles
+        }
+        batch: list[tuple[str, str, str | None, str]] = []
         batch_keys: set[str] = set()
-        for _label, name, url, category in collection.entries:
+        for label, name, url, category in collection.entries:
             key = dedup_key(url)
             if key in existing or key in seen or key in batch_keys:
                 continue
             batch_keys.add(key)
-            batch.append((name, url, category))
+            batch.append((name, url, category, browser_ids.get(label, "")))
 
         created = service.add_synced("links", batch) if batch else []
 

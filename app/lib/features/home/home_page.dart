@@ -26,6 +26,7 @@ import '../../util/json_backup.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/resource_grid.dart';
 import '../../widgets/resource_table.dart';
+import '../../widgets/site_icon.dart';
 import '../../widgets/status_bar.dart';
 import 'resource_detail_panel.dart';
 import 'resource_form.dart';
@@ -115,6 +116,7 @@ class _HomePageState extends State<HomePage> {
   StreamSubscription<BackendEvent>? _eventSubscription;
   StreamSubscription<List<String>>? _dropSubscription;
   HotkeyStatus? _hotkey;
+  List<BrowserInfo> _browsers = const <BrowserInfo>[];
 
   List<ResourceItem> _links = <ResourceItem>[];
   List<ResourceItem> _folders = <ResourceItem>[];
@@ -183,6 +185,32 @@ class _HomePageState extends State<HomePage> {
     // Shell file drops arrive from the runner (WM_DROPFILES -> method channel).
     _dropSubscription = NativeShell.drops.listen(_handleDropPaths);
     _reloadAll();
+    unawaited(_loadBrowsers());
+    unawaited(_loadFavicons());
+  }
+
+  /// Installed browsers power the per-site "open with" choices; the list stays
+  /// empty when the registry read fails (non-Windows, restricted machine) and
+  /// the UI falls back to the system default browser.
+  Future<void> _loadBrowsers() async {
+    try {
+      final List<BrowserInfo> browsers = await widget.api.listBrowsers();
+      if (mounted) {
+        setState(() => _browsers = browsers);
+      }
+    } catch (_) {
+      // Optional feature; keep the empty list.
+    }
+  }
+
+  /// Missing icons are downloaded in the background; the finished map arrives
+  /// as a `favicons` event. Failures keep the generic per-kind glyph.
+  Future<void> _loadFavicons() async {
+    try {
+      FaviconIndex.update(await widget.api.refreshFavicons());
+    } catch (_) {
+      // Cosmetic feature; the cached map (possibly empty) is enough.
+    }
   }
 
   @override
@@ -211,6 +239,16 @@ class _HomePageState extends State<HomePage> {
       await _handleBookmarkEvent(event.payload);
       return;
     }
+    if (event.name == 'favicons') {
+      final Object? raw = event.payload['icons'];
+      if (raw is Map) {
+        FaviconIndex.update(<String, String>{
+          for (final MapEntry<dynamic, dynamic> entry in raw.entries)
+            '${entry.key}': '${entry.value}',
+        });
+      }
+      return;
+    }
     if (event.name != 'hotkey') {
       return;
     }
@@ -230,6 +268,7 @@ class _HomePageState extends State<HomePage> {
     final int deleted = (payload['deleted'] as num?)?.toInt() ?? 0;
     final int renamed = (payload['renamed'] as num?)?.toInt() ?? 0;
     await _reload(ViewMode.links);
+    unawaited(_loadFavicons());
     if (!mounted) {
       return;
     }
@@ -465,14 +504,14 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<void> _openFromQuick(ResourceItem item) async {
+  Future<void> _openFromQuick(ResourceItem item, {String? browser}) async {
     final ViewMode mode =
         _quickKind.isLinks ? ViewMode.links : ViewMode.folders;
     await _closeQuick();
     if (!mounted) {
       return;
     }
-    await _openResource(item, mode);
+    await _openResource(item, mode, browser: browser);
   }
 
   Future<void> _openPathFromQuick(String path) async {
@@ -616,6 +655,9 @@ class _HomePageState extends State<HomePage> {
       await _reload(_mode);
       if (!mounted) {
         return;
+      }
+      if (_mode.isLinks) {
+        unawaited(_loadFavicons());
       }
       setState(() {
         _selectedId = null;
@@ -1068,6 +1110,9 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) {
         return null;
       }
+      if (isLinks) {
+        unawaited(_loadFavicons());
+      }
       setState(() => _selectedId = saved.id);
       _setStatus(
         _Status(
@@ -1475,18 +1520,52 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _open(ResourceItem item) => _openResource(item, _mode);
 
-  Future<void> _openResource(ResourceItem item, ViewMode mode) async {
+  Future<void> _openResource(
+    ResourceItem item,
+    ViewMode mode, {
+    String? browser,
+  }) async {
     final AppStrings strings = context.l10n;
     try {
-      // The runner owns the foreground window, so it can hand foreground
-      // rights to Explorer / the browser; without that they can open behind
-      // this window. Fall back to the backend when the native method is absent
-      // (widget tests, non-Windows, or a rejected target).
-      final bool handled = await NativeShell.openTarget(item.path);
-      if (!handled) {
-        await _repo.open(mode, item.id);
+      // A per-site browser choice must go through the backend: the native
+      // hand-off to the shell only knows the system default browser.
+      final bool explicitBrowser =
+          mode.isLinks && (browser != null || item.browser.isNotEmpty);
+      if (explicitBrowser) {
+        await _repo.open(mode, item.id, browser: browser);
+      } else {
+        // The runner owns the foreground window, so it can hand foreground
+        // rights to Explorer / the browser; without that they can open behind
+        // this window. Fall back to the backend when the native method is absent
+        // (widget tests, non-Windows, or a rejected target).
+        final bool handled = await NativeShell.openTarget(item.path);
+        if (!handled) {
+          await _repo.open(mode, item.id);
+        }
       }
       _setStatus(_Status(text: '${strings.t('open')}: ${item.name}'));
+    } on BackendException catch (error) {
+      _setStatus(_Status.fromError(error));
+    }
+  }
+
+  /// Persists the per-link browser choice made in the details panel.
+  Future<void> _setLinkBrowser(ResourceItem item, String browserId) async {
+    try {
+      final ResourceItem updated = await _repo.update(
+        ViewMode.links,
+        id: item.id,
+        name: item.name,
+        target: item.path,
+        category: item.category,
+        note: item.note,
+        browser: browserId,
+      );
+      await _reload(ViewMode.links);
+      if (!mounted) {
+        return;
+      }
+      setState(() => _selectedId = updated.id);
     } on BackendException catch (error) {
       _setStatus(_Status.fromError(error));
     }
@@ -1694,8 +1773,11 @@ class _HomePageState extends State<HomePage> {
         kind: _quickKind,
         links: _links,
         folders: _folders,
+        browsers: _browsers,
         loadChildren: _repo.listChildren,
         onOpenItem: (ResourceItem item) => unawaited(_openFromQuick(item)),
+        onOpenWith: (ResourceItem item, String browserId) =>
+            unawaited(_openFromQuick(item, browser: browserId)),
         onOpenPath: (String path) => unawaited(_openPathFromQuick(path)),
         onSwitchKind: _switchQuickKind,
         onClose: () => unawaited(_closeQuick()),
@@ -1753,6 +1835,11 @@ class _HomePageState extends State<HomePage> {
                                     '${detailItem.id}-${_mode.name}',
                                   ),
                                   item: detailItem,
+                                  browsers: _browsers,
+                                  onChangeBrowser: (String browserId) =>
+                                      unawaited(
+                                    _setLinkBrowser(detailItem, browserId),
+                                  ),
                                   loadChildren: _repo.listChildren,
                                   onClose: _closeDetail,
                                   onResize: (double dx) => setState(() {

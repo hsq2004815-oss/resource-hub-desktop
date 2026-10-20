@@ -16,6 +16,7 @@ import '../models/resource_item.dart';
 import '../util/formatters.dart';
 import 'app_card.dart';
 import 'reorder_grip.dart';
+import 'site_icon.dart';
 
 /// Moves [item] to [targetIndex] of the visible list *after* removing it.
 ///
@@ -551,7 +552,7 @@ class _KindCell extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Icon(icon, size: 14, color: color),
+        SiteIcon(item: item, fallback: icon, size: 14, color: color),
         const SizedBox(width: 5),
         Flexible(
           child: Text(

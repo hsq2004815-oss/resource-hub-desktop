@@ -46,6 +46,8 @@ from typing import Any, Callable, IO, Mapping
 from .ai import AI_KEY_FILENAME, AiClient, AiError, AiItem, AiKeyStore, AiKeyStoreError
 from .bookmark_bridge import BookmarkBridge
 from .bookmarks import BookmarkSyncEngine, BookmarkWatcher, dedup_key
+from .favicons import FaviconStore
+from .browsers import find_browser, installed_browsers
 from .fs import list_children, open_fs_path, reveal_fs_path
 from .hotkey import GlobalHotkeyListener, is_combination_available
 from .launcher import open_link, open_path, reveal_path
@@ -145,6 +147,9 @@ class ServerState:
     #: Phase 22: DPAPI-encrypted API key for the optional AI suggestions. Kept
     #: out of ``settings.json`` on purpose (that file is plain JSON).
     ai_key_store: AiKeyStore
+    #: Cached per-site favicons (``data/favicons``); the UI asks for a refresh
+    #: once at startup and after imports, so no network happens by default.
+    favicons: FaviconStore
     load_error: str | None = None
     #: Serialises every protocol handler with the bookmark watcher's sync, so a
     #: background import can never interleave with a user-triggered write.
@@ -165,11 +170,17 @@ class Dispatcher:
     def __init__(self, state: ServerState, writer: FrameWriter) -> None:
         self.state = state
         self.writer = writer
+        self._favicon_lock = threading.Lock()
+        self._favicon_pending: list[str] = []
+        self._favicon_thread: threading.Thread | None = None
         self._handlers: dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]] = {
             "app.hello": self._hello,
             "app.shutdown": self._shutdown,
             "bookmarks.status": self._bookmarks_status,
             "bookmarks.sync": self._bookmarks_sync,
+            "browsers.list": self._browsers_list,
+            "favicons.map": self._favicons_map,
+            "favicons.refresh": self._favicons_refresh,
             "bookmarks.extensionStatus": self._bookmarks_extension_status,
             "bookmarks.matches": self._bookmarks_matches,
             "ai.status": self._ai_status,
@@ -254,6 +265,58 @@ class Dispatcher:
     # -- bookmarks ---------------------------------------------------------
     def _bookmarks_status(self, params: Mapping[str, Any]) -> dict[str, Any]:
         return self.state.bookmark_engine.status(self.state.settings)
+
+    def _browsers_list(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            "browsers": [browser.to_json() for browser in installed_browsers()]
+        }
+
+    # -- favicons ----------------------------------------------------------
+    def _favicons_map(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        return {"icons": self.state.favicons.paths()}
+
+    def _favicons_refresh(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        """Return the cached map now and fetch the missing hosts in the background."""
+        if self.state.load_error is None:
+            try:
+                urls = [
+                    str(item.target)
+                    for item in self.state.service.items("links")
+                    if getattr(item, "target", "")
+                ]
+            except Exception:  # noqa: BLE001 - icons must never break the UI
+                urls = []
+            self._kick_favicons(urls)
+        return {"icons": self.state.favicons.paths()}
+
+    def _kick_favicons(self, urls: list[str]) -> None:
+        if not urls:
+            return
+        with self._favicon_lock:
+            self._favicon_pending.extend(urls)
+            if self._favicon_thread is not None and self._favicon_thread.is_alive():
+                return
+            self._favicon_thread = threading.Thread(
+                target=self._favicon_worker,
+                name="favicon-fetch",
+                daemon=True,
+            )
+            self._favicon_thread.start()
+
+    def _favicon_worker(self) -> None:
+        store = self.state.favicons
+        while True:
+            with self._favicon_lock:
+                urls = list(dict.fromkeys(self._favicon_pending))
+                self._favicon_pending.clear()
+                if not urls:
+                    self._favicon_thread = None
+                    return
+            try:
+                icons = store.refresh(urls)
+                self.writer.event("favicons", {"icons": icons})
+            except Exception:  # noqa: BLE001 - a failed icon fetch is harmless
+                pass
 
     def _bookmarks_sync(self, params: Mapping[str, Any]) -> dict[str, Any]:
         self._require_loaded()
@@ -538,6 +601,7 @@ class Dispatcher:
             target=self._require_str(params, "target"),
             category=params.get("category") if isinstance(params.get("category"), str) else None,
             note=str(params.get("note") or ""),
+            browser=str(params.get("browser") or ""),
         )
         return {"item": item.to_json()}
 
@@ -551,6 +615,11 @@ class Dispatcher:
             target=self._require_str(params, "target"),
             category=params.get("category") if isinstance(params.get("category"), str) else None,
             note=str(params.get("note") or ""),
+            browser=(
+                params.get("browser")
+                if isinstance(params.get("browser"), str)
+                else None
+            ),
         )
         return {"item": item.to_json()}
 
@@ -625,7 +694,16 @@ class Dispatcher:
         mode = self._require_mode(params)
         item = self.state.service.get(mode, self._require_str(params, "id"))
         if mode == "links":
-            open_link(item.target)
+            requested = params.get("browser")
+            browser_id = (
+                requested.strip()
+                if isinstance(requested, str) and requested.strip()
+                else getattr(item, "browser", "")
+            )
+            open_link(
+                item.target,
+                find_browser(browser_id) if browser_id else None,
+            )
         else:
             open_path(item.target)
         return {"opened": True}
@@ -836,6 +914,7 @@ class JsonLinesServer:
             settings=Settings(),
             bookmark_engine=BookmarkSyncEngine(self.base_dir),
             ai_key_store=AiKeyStore(self.base_dir / AI_KEY_FILENAME),
+            favicons=FaviconStore(self.base_dir),
             load_error=load_error,
         )
         if load_error is None:

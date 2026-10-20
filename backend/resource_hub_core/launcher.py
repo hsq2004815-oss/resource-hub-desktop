@@ -15,6 +15,7 @@ import subprocess
 import webbrowser
 from pathlib import Path
 
+from .browsers import Browser
 from .service import ServiceError
 
 OPEN_FAILED_KEY = "open_folder_failed"
@@ -25,10 +26,13 @@ _popen = subprocess.Popen
 _startfile = getattr(os, "startfile", None)
 
 
-def open_link(url: str) -> None:
-    """Open a URL in the default browser. The legacy app ignored the result."""
+def open_link(url: str, browser: Browser | None = None) -> None:
+    """Open a URL, either in ``browser`` or in the system default browser."""
     if not url:
         raise ServiceError(OPEN_FAILED_KEY, "empty url")
+    if browser is not None and browser.command:
+        _popen([browser.command, url])
+        return
     _open_url(url)
 
 

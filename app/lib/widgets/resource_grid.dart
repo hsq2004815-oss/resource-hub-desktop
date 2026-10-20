@@ -26,6 +26,7 @@ import '../util/formatters.dart';
 import 'app_card.dart';
 import 'reorder_grip.dart';
 import 'resource_table.dart';
+import 'site_icon.dart';
 
 /// Presentation chosen by the workspace view toggle.
 enum ResourceLayout { list, grid }
@@ -496,7 +497,12 @@ class _ResourceCardState extends State<_ResourceCard> {
                               : scheme.surfaceContainerHigh,
                           borderRadius: BorderRadius.circular(AppRadius.xs),
                         ),
-                        child: Icon(kindIcon, size: 16, color: muted),
+                        child: SiteIcon(
+                          item: item,
+                          fallback: kindIcon,
+                          size: 18,
+                          color: muted,
+                        ),
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       Expanded(

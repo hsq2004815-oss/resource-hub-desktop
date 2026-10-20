@@ -315,6 +315,7 @@ class ResourceService:
         target: str,
         category: str | None = None,
         note: str = "",
+        browser: str = "",
     ) -> Resource:
         """Validate, de-duplicate and insert at the top of the collection."""
         self._require_loaded()
@@ -334,28 +335,31 @@ class ResourceService:
             kind=kind,
             category=clean_category,
             note=clean_note,
+            browser=browser,
         )
         self._items[mode].insert(0, item)
         self._save(mode)
         return item
 
     def add_synced(
-        self, mode: str, entries: Sequence[tuple[str, str, str | None]]
+        self, mode: str, entries: Sequence[tuple[str, str, str | None, str]]
     ) -> list[Resource]:
         """Append a batch imported from a browser profile.
 
-        ``entries`` are ``(name, target, category)`` tuples. Validation and
-        de-duplication are identical to :meth:`add`, but a bad entry is skipped
-        instead of raising: browser data is not user input, so one unparseable
-        bookmark must not abort the whole import. Unlike :meth:`add`, accepted
-        entries go to the **end** of the collection — a sync must not push the
-        user's own rows down — and the JSON file is written once per batch.
+        ``entries`` are ``(name, target, category, browser)`` tuples; the browser
+        id is empty for manual imports. Validation and de-duplication are
+        identical to :meth:`add`, but a bad entry is skipped instead of raising:
+        browser data is not user input, so one unparseable bookmark must not
+        abort the whole import. Unlike :meth:`add`, accepted entries go to the
+        **end** of the collection — a sync must not push the user's own rows
+        down — and the JSON file is written once per batch.
 
         Returns the created resources in input order.
         """
         self._require_loaded()
         created: list[Resource] = []
-        for raw_name, raw_target, raw_category in entries:
+        for entry in entries:
+            raw_name, raw_target, raw_category, raw_browser = entry
             clean_name = str(raw_name).strip()
             clean_target = str(raw_target).strip()
             try:
@@ -373,6 +377,7 @@ class ResourceService:
                 kind=kind,
                 category=normalize_category(raw_category),
                 note="",
+                browser=raw_browser,
             )
             self._items[mode].append(item)
             created.append(item)
@@ -389,6 +394,7 @@ class ResourceService:
         target: str,
         category: str | None = None,
         note: str = "",
+        browser: str | None = None,
     ) -> Resource:
         """Replace an entry in place, preserving ``id``, ``createdAt`` and ``favorite``."""
         self._require_loaded()
@@ -407,6 +413,9 @@ class ResourceService:
             kind=kind,
             category=normalize_category(category),
             note=note.strip(),
+            browser=(
+                getattr(existing, "browser", "") if browser is None else browser
+            ),
             item_id=item_id,
             created_at=existing.created_at,
             favorite=existing.favorite,
@@ -607,6 +616,7 @@ class ResourceService:
         kind: str,
         category: str,
         note: str,
+        browser: str = "",
         item_id: str | None = None,
         created_at: str | None = None,
         favorite: bool = False,
@@ -620,7 +630,11 @@ class ResourceService:
             "created_at": created_at or now_iso(),
         }
         if mode == "links":
-            return Site(url=target, **common)
+            return Site(
+                url=target,
+                browser=str(browser or "").strip().casefold(),
+                **common,
+            )
         return Folder(path=target, kind=kind, **common)
 
     def replace_all(self, mode: str, items: Iterable[Resource]) -> None:

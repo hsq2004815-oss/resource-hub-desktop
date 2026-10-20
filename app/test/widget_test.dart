@@ -31,16 +31,24 @@ class FakeApi implements ResourceApi {
     List<ResourceItem>? folders,
     List<ResourceItem>? links,
     Map<String, List<FsEntry>>? children,
+    List<BrowserInfo>? browsers,
+    Map<String, String>? favicons,
   })  : _folders = folders ?? _seedFolders(),
         _links = links ?? _seedLinks(),
-        _children = children ?? _seedChildren();
+        _children = children ?? _seedChildren(),
+        browsers = browsers ?? _seedBrowsers(),
+        favicons = favicons ?? <String, String>{};
 
   final List<ResourceItem> _folders;
   final List<ResourceItem> _links;
   final Map<String, List<FsEntry>> _children;
+  final List<BrowserInfo> browsers;
+  final Map<String, String> favicons;
 
   /// How often the shell fell back to the backend for open/reveal.
   int openCalls = 0;
+  String? lastOpenedId;
+  String? lastOpenedBrowser;
   int revealCalls = 0;
 
   /// Filesystem browsing (details panel).
@@ -51,6 +59,19 @@ class FakeApi implements ResourceApi {
   String? lastRevealedPath;
 
   List<ResourceItem> _bucket(ViewMode mode) => mode.isLinks ? _links : _folders;
+
+  static List<BrowserInfo> _seedBrowsers() => const <BrowserInfo>[
+        BrowserInfo(
+          id: 'chrome',
+          name: 'Google Chrome',
+          path: r'C:\chrome.exe',
+        ),
+        BrowserInfo(
+          id: 'edge',
+          name: 'Microsoft Edge',
+          path: r'C:\msedge.exe',
+        ),
+      ];
 
   static Map<String, List<FsEntry>> _seedChildren() => <String, List<FsEntry>>{
         r'D:\Workspace\resource-hub': <FsEntry>[
@@ -222,6 +243,7 @@ class FakeApi implements ResourceApi {
     required String target,
     String? category,
     String? note,
+    String? browser,
   }) async {
     final List<ResourceItem> bucket = _bucket(mode);
     final int index = bucket.indexWhere((ResourceItem e) => e.id == id);
@@ -230,6 +252,7 @@ class FakeApi implements ResourceApi {
       path: target,
       category: category ?? kUncategorized,
       note: note ?? '',
+      browser: browser ?? bucket[index].browser,
     );
     bucket[index] = updated;
     return updated;
@@ -294,9 +317,20 @@ class FakeApi implements ResourceApi {
   }
 
   @override
-  Future<void> open(ViewMode mode, String id) async {
+  Future<void> open(ViewMode mode, String id, {String? browser}) async {
     openCalls += 1;
+    lastOpenedId = id;
+    lastOpenedBrowser = browser;
   }
+
+  @override
+  Future<List<BrowserInfo>> listBrowsers() async => browsers;
+
+  @override
+  Future<Map<String, String>> faviconMap() async => favicons;
+
+  @override
+  Future<Map<String, String>> refreshFavicons() async => favicons;
 
   @override
   Future<void> reveal(ViewMode mode, String id) async {
@@ -942,6 +976,27 @@ void main() {
     expect(api.openCalls, 1);
   });
 
+  testWidgets('link details can pick the browser used to open it',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    await tester.tap(find.text('网站'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('GitHub'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('打开方式'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('link-browser-dropdown')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Microsoft Edge').last);
+    await tester.pumpAndSettle();
+
+    expect(api.links.first.browser, 'edge');
+  });
+
   testWidgets('hotkey recorder probes and saves a new combination',
       (WidgetTester tester) async {
     final FakeApi api = FakeApi();
@@ -1518,6 +1573,27 @@ void main() {
 
     expect(api.openCalls, 1);
     expect(find.byTooltip('新增资源'), findsOneWidget);
+  });
+
+  testWidgets('right-clicking a quick HUD link offers the installed browsers',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    api.emitHotkey('quickLinks');
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.text('GitHub'),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Microsoft Edge'), findsOneWidget);
+
+    await tester.tap(find.text('Microsoft Edge'));
+    await tester.pumpAndSettle();
+
+    expect(api.openCalls, 1);
+    expect(api.lastOpenedBrowser, 'edge');
   });
 
   testWidgets('runner quickDismissed notification closes the HUD',

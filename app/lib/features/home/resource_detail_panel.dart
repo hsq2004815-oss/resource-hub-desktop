@@ -20,11 +20,14 @@ import '../../l10n/strings_scope.dart';
 import '../../models/resource_item.dart';
 import '../../util/formatters.dart';
 import '../../widgets/mind_map.dart';
+import '../../widgets/site_icon.dart';
 
 class ResourceDetailPanel extends StatefulWidget {
   const ResourceDetailPanel({
     super.key,
     required this.item,
+    this.browsers = const <BrowserInfo>[],
+    this.onChangeBrowser,
     required this.loadChildren,
     required this.onClose,
     required this.onResize,
@@ -39,6 +42,10 @@ class ResourceDetailPanel extends StatefulWidget {
   });
 
   final ResourceItem item;
+  final List<BrowserInfo> browsers;
+
+  /// Persists the per-link "open with" browser; ``null`` hides the dropdown.
+  final ValueChanged<String>? onChangeBrowser;
   final Future<FsListing> Function(String path) loadChildren;
   final VoidCallback onClose;
 
@@ -143,6 +150,7 @@ class _ResourceDetailPanelState extends State<ResourceDetailPanel> {
                       _buildHeader(context),
                       _buildPathRow(context),
                       _buildActionsRow(context),
+                      if (!_isFolder) _buildBrowserRow(context),
                       if (_isFolder) _buildZoomBar(context),
                       const Divider(height: 1),
                       Expanded(
@@ -207,7 +215,12 @@ class _ResourceDetailPanelState extends State<ResourceDetailPanel> {
               color: scheme.surfaceContainerHigh,
               borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
-            child: Icon(icon, size: 19, color: scheme.onSurfaceVariant),
+            child: SiteIcon(
+              item: item,
+              fallback: icon,
+              size: 22,
+              color: scheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(width: AppSpacing.sm + 2),
           Expanded(
@@ -279,6 +292,73 @@ class _ResourceDetailPanelState extends State<ResourceDetailPanel> {
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Per-link "open with" choice: empty means the system default browser.
+  Widget _buildBrowserRow(BuildContext context) {
+    final AppStrings t = context.l10n;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme text = Theme.of(context).textTheme;
+    final String value = widget.item.browser;
+    final bool known = value.isEmpty ||
+        widget.browsers.any((BrowserInfo browser) => browser.id == value);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        0,
+        AppSpacing.sm,
+        AppSpacing.xs,
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(Icons.public, size: 13, color: scheme.onSurfaceVariant),
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            '${t.tx('open_with')} ',
+            style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          Expanded(
+            child: DropdownButton<String>(
+              key: const ValueKey<String>('link-browser-dropdown'),
+              value: value,
+              isDense: true,
+              isExpanded: true,
+              underline: const SizedBox.shrink(),
+              style: text.bodySmall,
+              items: <DropdownMenuItem<String>>[
+                DropdownMenuItem<String>(
+                  value: '',
+                  child: Text(
+                    t.tx('open_with_default'),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                for (final BrowserInfo browser in widget.browsers)
+                  DropdownMenuItem<String>(
+                    value: browser.id,
+                    child: Text(
+                      browser.name,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                if (!known)
+                  DropdownMenuItem<String>(
+                    value: value,
+                    child: Text(value, overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              onChanged: widget.onChangeBrowser == null
+                  ? null
+                  : (String? next) {
+                      if (next != null) {
+                        widget.onChangeBrowser!(next);
+                      }
+                    },
+            ),
           ),
         ],
       ),

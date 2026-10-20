@@ -38,6 +38,7 @@ abstract interface class ResourceApi {
     required String target,
     String? category,
     String? note,
+    String? browser,
   });
 
   Future<DeleteOutcome> delete(
@@ -56,7 +57,9 @@ abstract interface class ResourceApi {
   /// flags — only the stored array order.
   Future<List<ResourceItem>> reorder(ViewMode mode, List<String> ids);
 
-  Future<void> open(ViewMode mode, String id);
+  /// Opens a resource. Links use their stored browser unless [browser]
+  /// overrides it (empty string = system default browser).
+  Future<void> open(ViewMode mode, String id, {String? browser});
 
   Future<void> reveal(ViewMode mode, String id);
 
@@ -96,6 +99,18 @@ abstract interface class ResourceApi {
 
   /// Watched browser profiles and the last bookmark sync state.
   Future<BookmarkStatus> loadBookmarkStatus();
+
+  /// Installed browsers for the per-site "open with" choice (empty off Windows).
+  Future<List<BrowserInfo>> listBrowsers();
+
+  /// Cached site favicons as host → absolute icon path (empty before the first
+  /// fetch). Icon failures are cosmetic: the UI keeps its generic glyph.
+  Future<Map<String, String>> faviconMap();
+
+  /// [faviconMap] and also asks the backend to download missing icons; the
+  /// call returns immediately and the finished map arrives as a `favicons`
+  /// event.
+  Future<Map<String, String>> refreshFavicons();
 
   /// Browser bookmarks whose URL matches one of [urls] (read-only, Phase 18).
   Future<List<BookmarkMatch>> bookmarkMatches(List<String> urls);

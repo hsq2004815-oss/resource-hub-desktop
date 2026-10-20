@@ -85,6 +85,7 @@ class BackendRepository implements ResourceApi {
     required String target,
     String? category,
     String? note,
+    String? browser,
   }) async {
     final Map<String, dynamic> result = await client.call(
       'resources.update',
@@ -95,6 +96,7 @@ class BackendRepository implements ResourceApi {
         'target': target,
         'category': ?category,
         'note': note ?? '',
+        'browser': ?browser,
       },
     );
     return ResourceItem.fromJson(result['item'] as Map<String, dynamic>);
@@ -142,11 +144,45 @@ class BackendRepository implements ResourceApi {
   }
 
   @override
-  Future<void> open(ViewMode mode, String id) async {
+  Future<void> open(ViewMode mode, String id, {String? browser}) async {
     await client.call(
       'resources.open',
-      <String, dynamic>{'mode': mode.name, 'id': id},
+      <String, dynamic>{
+        'mode': mode.name,
+        'id': id,
+        'browser': ?browser,
+      },
     );
+  }
+
+  @override
+  Future<List<BrowserInfo>> listBrowsers() async {
+    final Map<String, dynamic> result = await client.call(
+      'browsers.list',
+      <String, dynamic>{},
+    );
+    return (result['browsers'] as List<dynamic>? ?? <dynamic>[])
+        .map((dynamic e) => BrowserInfo.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<Map<String, String>> faviconMap() async =>
+      _icons(await client.call('favicons.map', <String, dynamic>{}));
+
+  @override
+  Future<Map<String, String>> refreshFavicons() async =>
+      _icons(await client.call('favicons.refresh', <String, dynamic>{}));
+
+  static Map<String, String> _icons(Map<String, dynamic> result) {
+    final Object? raw = result['icons'];
+    if (raw is! Map) {
+      return const <String, String>{};
+    }
+    return <String, String>{
+      for (final MapEntry<dynamic, dynamic> entry in raw.entries)
+        '${entry.key}': '${entry.value}',
+    };
   }
 
   @override

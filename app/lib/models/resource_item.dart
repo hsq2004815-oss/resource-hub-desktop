@@ -63,6 +63,7 @@ class ResourceItem {
     this.note = '',
     this.favorite = false,
     this.createdAt,
+    this.browser = '',
     this.pathState = PathState.unknown,
   });
 
@@ -79,6 +80,10 @@ class ResourceItem {
 
   /// Local-time ISO8601 with offset, e.g. `2026-04-22T13:53:49.313959+08:00`.
   final DateTime? createdAt;
+
+  /// Browser id used to open this link (`chrome` / `edge` / …); empty means the
+  /// system default. Imported bookmarks keep their origin browser.
+  final String browser;
 
   final PathState pathState;
 
@@ -103,6 +108,7 @@ class ResourceItem {
     String? note,
     bool? favorite,
     DateTime? createdAt,
+    String? browser,
     PathState? pathState,
   }) {
     return ResourceItem(
@@ -114,6 +120,7 @@ class ResourceItem {
       note: note ?? this.note,
       favorite: favorite ?? this.favorite,
       createdAt: createdAt ?? this.createdAt,
+      browser: browser ?? this.browser,
       pathState: pathState ?? this.pathState,
     );
   }
@@ -139,6 +146,7 @@ class ResourceItem {
       note: (json['note'] as String?) ?? '',
       favorite: json['favorite'] == true,
       createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? ''),
+      browser: (json['browser'] as String?) ?? '',
     );
   }
 
@@ -174,6 +182,7 @@ class ResourceItem {
       note: (json['note'] as String?) ?? '',
       favorite: json['favorite'] == true,
       createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? ''),
+      browser: (json['browser'] as String?) ?? '',
     );
   }
 
@@ -187,6 +196,7 @@ class ResourceItem {
       'note': note,
       'favorite': favorite,
       'createdAt': createdAt?.toIso8601String(),
+      if (kind == ResourceKind.link && browser.isNotEmpty) 'browser': browser,
     };
   }
 }
