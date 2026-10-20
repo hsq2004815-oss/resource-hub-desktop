@@ -1713,6 +1713,24 @@ void main() {
     expect(saved.last.bookmarkSyncEnabled, isFalse);
   });
 
+  testWidgets('settings exposes mouse side buttons and persists the switch',
+      (WidgetTester tester) async {
+    final List<AppSettings> saved = <AppSettings>[];
+    await pumpApp(
+      tester,
+      onSettingsChanged: (AppSettings settings) async => saved.add(settings),
+    );
+    await openSettings(tester);
+    expect(find.text('鼠标侧键'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('mouse-side-buttons-switch')),
+    );
+    await tester.pumpAndSettle();
+    expect(saved, isNotEmpty);
+    expect(saved.last.mouseSideButtonsEnabled, isTrue);
+  });
+
   testWidgets('delete offers to remove the matching browser bookmark',
       (WidgetTester tester) async {
     final FakeApi api = FakeApi()

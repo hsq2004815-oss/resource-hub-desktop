@@ -1056,5 +1056,49 @@ class EventChannelTests(ProtocolTestCase):
         )
 
 
+    def test_hotkey_start_reports_disabled_mouse_buttons(self) -> None:
+        self.call("settings.set", {"settings": {"globalHotkeyEnabled": False}})
+        mouse = self.call("hotkey.start")["result"]["mouseSideButtons"]
+        self.assertEqual(
+            mouse,
+            {"enabled": False, "registered": False, "reason": "disabled"},
+        )
+
+    def test_mouse_side_buttons_start_independently_of_hotkeys(self) -> None:
+        started: list[Any] = []
+
+        class FakeMouse:
+            def __init__(self, on_action: Any) -> None:
+                self.on_action = on_action
+                self.stopped = False
+
+            def start(self, timeout: float = 2.0) -> bool:
+                started.append(self)
+                return True
+
+            def stop(self, timeout: float = 2.0) -> None:
+                self.stopped = True
+
+        self.call(
+            "settings.set",
+            {
+                "settings": {
+                    "globalHotkeyEnabled": False,
+                    "mouseSideButtonsEnabled": True,
+                }
+            },
+        )
+        with mock.patch(
+            "resource_hub_core.protocol.MouseSideButtonListener", FakeMouse
+        ):
+            result = self.call("hotkey.start")["result"]
+        self.assertTrue(result["mouseSideButtons"]["enabled"])
+        self.assertTrue(result["mouseSideButtons"]["registered"])
+        self.assertIsNone(result["mouseSideButtons"]["reason"])
+        self.assertEqual(len(started), 1)
+        self.call("hotkey.stop")
+        self.assertTrue(started[0].stopped)
+
+
 if __name__ == "__main__":
     unittest.main()

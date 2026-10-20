@@ -51,6 +51,25 @@ class SettingsNormalizeTests(unittest.TestCase):
                     settings.bookmark_delete_mode, DEFAULT_BOOKMARK_DELETE_MODE
                 )
 
+    def test_mouse_side_buttons_default_off_and_normalised(self) -> None:
+        self.assertFalse(Settings().mouse_side_buttons_enabled)
+        self.assertTrue(
+            Settings.normalize(
+                {"mouseSideButtonsEnabled": True}
+            ).mouse_side_buttons_enabled
+        )
+        # Non-bool values are ignored, like every other switch.
+        for value in (None, "true", 1, [], {}):
+            with self.subTest(value=value):
+                self.assertFalse(
+                    Settings.normalize(
+                        {"mouseSideButtonsEnabled": value}
+                    ).mouse_side_buttons_enabled
+                )
+        payload = Settings.normalize({"mouseSideButtonsEnabled": True}).to_json()
+        self.assertIs(payload["mouseSideButtonsEnabled"], True)
+        self.assertTrue(Settings.normalize(payload).mouse_side_buttons_enabled)
+
     def test_bookmark_defaults(self) -> None:
         settings = Settings()
         self.assertTrue(settings.bookmark_sync_enabled)

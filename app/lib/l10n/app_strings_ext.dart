@@ -1,4 +1,4 @@
-﻿/// Strings that only the Flutter UI needs.
+/// Strings that only the Flutter UI needs.
 ///
 /// `strings.g.dart` is generated from the legacy Python `STRINGS` dict and must
 /// stay a faithful copy — editing `resource_hub.pyw` is out of scope for the
@@ -67,6 +67,9 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
     'settings_quick_hint': '只弹出树状图，不打开完整窗口。',
     'settings_quick_links': '网站树快捷键',
     'settings_quick_folders': '文件夹树快捷键',
+    'settings_mouse_side_buttons': '鼠标侧键',
+    'settings_mouse_side_buttons_hint': '后侧键打开网站面板，前侧键打开文件夹面板；'
+        '开启后会接管鼠标的后退 / 前进键。',
     'quick_search_links': '搜索网站、网址、分类…',
     'quick_search_folders': '搜索资源、路径、分类…',
     'quick_switch': '切换树（Tab）',
@@ -205,6 +208,10 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
         'Show a tree without opening the full window.',
     'settings_quick_links': 'Web links tree',
     'settings_quick_folders': 'Folders tree',
+    'settings_mouse_side_buttons': 'Mouse side buttons',
+    'settings_mouse_side_buttons_hint':
+        'Back button opens the web links panel, forward opens the folders '
+        'panel. When on, Drawer takes over the mouse back / forward buttons.',
     'quick_search_links': 'Search sites, URLs, categories…',
     'quick_search_folders': 'Search resources, paths, categories…',
     'quick_switch': 'Switch tree (Tab)',

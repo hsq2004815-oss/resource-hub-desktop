@@ -49,6 +49,7 @@ from .bookmarks import BookmarkSyncEngine, BookmarkWatcher, dedup_key
 from .fs import list_children, open_fs_path, reveal_fs_path
 from .hotkey import GlobalHotkeyListener, is_combination_available
 from .launcher import open_link, open_path, reveal_path
+from .mousehook import MouseSideButtonListener
 from .models import ALL_CATEGORIES, UNCATEGORIZED, Resource
 from .service import (
     DuplicateError,
@@ -153,6 +154,9 @@ class ServerState:
     #: when it is not running (corrupt data, bind failure, after shutdown).
     bookmark_bridge: BookmarkBridge | None = None
     hotkey: list[GlobalHotkeyListener] = field(default_factory=list)
+    #: Low-level mouse hook for the opt-in side-button quick panels; ``None``
+    #: when the feature is off or the hook could not be installed.
+    mouse_hook: MouseSideButtonListener | None = None
 
 
 class Dispatcher:
@@ -709,48 +713,68 @@ class Dispatcher:
             ("quickLinks", settings.quick_links_hotkey_id),
             ("quickFolders", settings.quick_folders_hotkey_id),
         )
-        if not settings.global_hotkey_enabled:
-            return {
-                "registered": False,
-                "label": settings.global_hotkey_id,
-                "reason": "disabled",
-                "registrations": [
-                    {
-                        "action": action,
-                        "label": label,
-                        "registered": False,
-                        "reason": "disabled",
-                    }
-                    for action, label in targets
-                ],
-            }
-
-        # One listener per action: three message pumps are independent because
-        # each registers with hWnd NULL on its own thread.
         registrations: list[dict[str, Any]] = []
         toggle_label = settings.global_hotkey_id
         toggle_registered = False
-        for action, label in targets:
-            listener = GlobalHotkeyListener(label, self._hotkey_pressed(action))
-            registered = listener.start()
-            if registered:
-                self.state.hotkey.append(listener)
-                if action == "toggle":
-                    toggle_label = listener.active_label
-                    toggle_registered = True
-            registrations.append(
+        if settings.global_hotkey_enabled:
+            # One listener per action: three message pumps are independent
+            # because each registers with hWnd NULL on its own thread.
+            for action, label in targets:
+                listener = GlobalHotkeyListener(label, self._hotkey_pressed(action))
+                registered = listener.start()
+                if registered:
+                    self.state.hotkey.append(listener)
+                    if action == "toggle":
+                        toggle_label = listener.active_label
+                        toggle_registered = True
+                registrations.append(
+                    {
+                        "action": action,
+                        "label": listener.active_label,
+                        "registered": registered,
+                        "reason": None if registered else "unavailable",
+                    }
+                )
+        else:
+            registrations = [
                 {
                     "action": action,
-                    "label": listener.active_label,
-                    "registered": registered,
-                    "reason": None if registered else "unavailable",
+                    "label": label,
+                    "registered": False,
+                    "reason": "disabled",
                 }
+                for action, label in targets
+            ]
+
+        # Mouse side buttons are a separate opt-in switch: they keep working
+        # when the keyboard hotkeys are disabled.
+        mouse_registered = False
+        if settings.mouse_side_buttons_enabled:
+            mouse = MouseSideButtonListener(
+                lambda action: self._hotkey_pressed(action)()
             )
+            mouse_registered = mouse.start()
+            if mouse_registered:
+                self.state.mouse_hook = mouse
+
         return {
             "registered": toggle_registered,
             "label": toggle_label,
-            "reason": None if toggle_registered else "unavailable",
+            "reason": None
+            if toggle_registered
+            else ("unavailable" if settings.global_hotkey_enabled else "disabled"),
             "registrations": registrations,
+            "mouseSideButtons": {
+                "enabled": settings.mouse_side_buttons_enabled,
+                "registered": mouse_registered,
+                "reason": None
+                if mouse_registered
+                else (
+                    "unavailable"
+                    if settings.mouse_side_buttons_enabled
+                    else "disabled"
+                ),
+            },
         }
 
     def _hotkey_stop(self, params: Mapping[str, Any]) -> dict[str, Any]:
@@ -761,6 +785,10 @@ class Dispatcher:
         for listener in self.state.hotkey:
             listener.stop()
         self.state.hotkey.clear()
+        mouse = self.state.mouse_hook
+        self.state.mouse_hook = None
+        if mouse is not None:
+            mouse.stop()
 
     def stop_bookmarks(self) -> None:
         """Stop the watcher thread (safe to call more than once)."""

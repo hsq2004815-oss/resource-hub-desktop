@@ -70,6 +70,9 @@ class Settings:
     global_hotkey_id: str = DEFAULT_HOTKEY_ID
     quick_links_hotkey_id: str = DEFAULT_QUICK_LINKS_HOTKEY_ID
     quick_folders_hotkey_id: str = DEFAULT_QUICK_FOLDERS_HOTKEY_ID
+    #: Mouse side buttons (XBUTTON1/2) open the quick panels. Off by default:
+    #: the hook swallows the back/forward buttons system-wide.
+    mouse_side_buttons_enabled: bool = False
     launch_at_startup: bool = False
     bookmark_sync_enabled: bool = True
     bookmark_custom_dir: str = ""
@@ -89,6 +92,7 @@ class Settings:
             "globalHotkeyId": self.global_hotkey_id,
             "quickLinksHotkeyId": self.quick_links_hotkey_id,
             "quickFoldersHotkeyId": self.quick_folders_hotkey_id,
+            "mouseSideButtonsEnabled": self.mouse_side_buttons_enabled,
             "launchAtStartup": self.launch_at_startup,
             "bookmarkSyncEnabled": self.bookmark_sync_enabled,
             "bookmarkCustomDir": self.bookmark_custom_dir,
@@ -112,6 +116,12 @@ class Settings:
         enabled = raw.get("globalHotkeyEnabled")
         if isinstance(enabled, bool):
             settings = replace(settings, global_hotkey_enabled=enabled)
+
+        mouse_buttons = raw.get("mouseSideButtonsEnabled")
+        if isinstance(mouse_buttons, bool):
+            settings = replace(
+                settings, mouse_side_buttons_enabled=mouse_buttons
+            )
 
         hotkey_id = raw.get("globalHotkeyId")
         parsed = parse_hotkey_id(str(hotkey_id)) if hotkey_id is not None else None

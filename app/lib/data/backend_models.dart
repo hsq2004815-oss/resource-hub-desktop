@@ -133,6 +133,7 @@ class AppSettings {
     this.globalHotkeyId = kDefaultGlobalHotkey,
     this.quickLinksHotkeyId = kDefaultQuickLinksHotkey,
     this.quickFoldersHotkeyId = kDefaultQuickFoldersHotkey,
+    this.mouseSideButtonsEnabled = false,
     this.bookmarkSyncEnabled = kDefaultBookmarkSyncEnabled,
     this.bookmarkCustomDir = kDefaultBookmarkCustomDir,
     this.bookmarkDeleteMode = kDefaultBookmarkDeleteMode,
@@ -152,6 +153,10 @@ class AppSettings {
 
   /// Phase 16: opens the compact folder tree HUD without the main window.
   final String quickFoldersHotkeyId;
+
+  /// Opt-in: XBUTTON1 ("back") opens the web links HUD and XBUTTON2
+  /// ("forward") the folders HUD. The hook swallows both buttons.
+  final bool mouseSideButtonsEnabled;
 
   /// Phase 17: import new Chrome/Edge bookmarks into the sites list.
   final bool bookmarkSyncEnabled;
@@ -180,6 +185,7 @@ class AppSettings {
     String? globalHotkeyId,
     String? quickLinksHotkeyId,
     String? quickFoldersHotkeyId,
+    bool? mouseSideButtonsEnabled,
     bool? bookmarkSyncEnabled,
     String? bookmarkCustomDir,
     String? bookmarkDeleteMode,
@@ -196,6 +202,8 @@ class AppSettings {
       quickLinksHotkeyId: quickLinksHotkeyId ?? this.quickLinksHotkeyId,
       quickFoldersHotkeyId:
           quickFoldersHotkeyId ?? this.quickFoldersHotkeyId,
+      mouseSideButtonsEnabled:
+          mouseSideButtonsEnabled ?? this.mouseSideButtonsEnabled,
       bookmarkSyncEnabled: bookmarkSyncEnabled ?? this.bookmarkSyncEnabled,
       bookmarkCustomDir: bookmarkCustomDir ?? this.bookmarkCustomDir,
       bookmarkDeleteMode: bookmarkDeleteMode ?? this.bookmarkDeleteMode,
@@ -214,6 +222,7 @@ class AppSettings {
         'globalHotkeyId': globalHotkeyId,
         'quickLinksHotkeyId': quickLinksHotkeyId,
         'quickFoldersHotkeyId': quickFoldersHotkeyId,
+        'mouseSideButtonsEnabled': mouseSideButtonsEnabled,
         'bookmarkSyncEnabled': bookmarkSyncEnabled,
         'bookmarkCustomDir': bookmarkCustomDir,
         'bookmarkDeleteMode': bookmarkDeleteMode,
@@ -233,6 +242,8 @@ class AppSettings {
           json['quickLinksHotkeyId'] as String? ?? kDefaultQuickLinksHotkey,
       quickFoldersHotkeyId:
           json['quickFoldersHotkeyId'] as String? ?? kDefaultQuickFoldersHotkey,
+      mouseSideButtonsEnabled:
+          json['mouseSideButtonsEnabled'] as bool? ?? false,
       bookmarkSyncEnabled: json['bookmarkSyncEnabled'] as bool? ??
           kDefaultBookmarkSyncEnabled,
       bookmarkCustomDir: json['bookmarkCustomDir'] as String? ??

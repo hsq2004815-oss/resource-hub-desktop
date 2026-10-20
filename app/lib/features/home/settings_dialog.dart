@@ -917,6 +917,42 @@ class _SettingsDialogState extends State<SettingsDialog> {
                         value: _settings.quickFoldersHotkeyId,
                       ),
                       const SizedBox(height: AppSpacing.xl),
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(
+                                  t.tx('settings_mouse_side_buttons'),
+                                  style: text.bodyMedium,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  t.tx('settings_mouse_side_buttons_hint'),
+                                  style: text.bodySmall?.copyWith(
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Switch(
+                            key: const ValueKey<String>(
+                              'mouse-side-buttons-switch',
+                            ),
+                            value: _settings.mouseSideButtonsEnabled,
+                            onChanged: (bool value) => unawaited(
+                              _apply(
+                                _settings.copyWith(
+                                  mouseSideButtonsEnabled: value,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
                       _buildBookmarkSection(context, t, scheme, text),
                       const SizedBox(height: AppSpacing.xl),
                       _buildAiSection(context, t, scheme, text),
