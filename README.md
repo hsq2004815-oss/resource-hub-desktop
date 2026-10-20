@@ -1,4 +1,7 @@
-# 抽屉 Drawer
+<h1 align="center">
+  <img src="docs/images/app-icon.png" width="104" alt="Drawer app icon"><br>
+  抽屉 Drawer
+</h1>
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
@@ -43,23 +46,28 @@ searchable list and one hotkey away.
 ## Screenshots
 
 <p align="center">
-  <img src="docs/images/main-window.png" width="820" alt="Main window: search box, category filter, resource list"><br>
-  <sub><b>Main window</b> — one searchable list for websites, folders and files. List or grid, drag to reorder, favorites pinned on top.</sub>
-</p>
-
-<p align="center">
-  <img src="docs/images/folder-mindmap.png" width="420" alt="Folder details with a mind map"><br>
-  <sub><b>Folder mind map</b> — click a folder row to unfold its contents. Zoom, pan, expand level by level; double-click to open, right-click to add a child.</sub>
+  <img src="docs/images/main-window.png" width="820" alt="Main window: website cards with their own icons"><br>
+  <sub><b>Main window</b> — one searchable list for websites, folders and files. Each website shows its own icon; list or grid, drag to reorder, favorites pinned on top.</sub>
 </p>
 
 <table>
+<tr>
+<td width="50%" align="center" valign="top">
+  <img src="docs/images/folder-mindmap.png" width="300" alt="Folder details with a mind map"><br>
+  <sub><b>Folder mind map</b> — click a folder row to unfold its contents. Zoom, pan, expand level by level; double-click to open, right-click to add a child.</sub>
+</td>
+<td width="50%" align="center" valign="top">
+  <img src="docs/images/site-browser.png" width="300" alt="Right-click a website to pick a browser"><br>
+  <sub><b>Pick a browser per site</b> — right-click a website in the quick panel to open it once in another browser; the details panel saves the default.</sub>
+</td>
+</tr>
 <tr>
 <td width="50%" align="center" valign="top">
   <img src="docs/images/quick-panel.png" width="300" alt="Quick panel"><br>
   <sub><b>Quick panel</b> — the compact tree behind <code>Ctrl+Alt+Shift+L/F</code>.</sub>
 </td>
 <td width="50%" align="center" valign="top">
-  <img src="docs/images/settings.png" width="330" alt="Settings"><br>
+  <img src="docs/images/settings.png" width="300" alt="Settings"><br>
   <sub><b>Settings</b> — language, theme, hotkeys, bookmark sync, AI suggestions.</sub>
 </td>
 </tr>

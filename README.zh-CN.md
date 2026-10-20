@@ -1,4 +1,7 @@
-# 抽屉 Drawer
+<h1 align="center">
+  <img src="docs/images/app-icon.png" width="104" alt="抽屉 Drawer 图标"><br>
+  抽屉 Drawer
+</h1>
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
@@ -39,23 +42,28 @@
 ## 截图
 
 <p align="center">
-  <img src="docs/images/main-window.png" width="820" alt="主窗口：搜索框、分类筛选、资源列表"><br>
-  <sub><b>主窗口</b> —— 网站、文件夹、文件放在同一个列表里；列表 / 网格切换，拖动排序，收藏置顶。</sub>
-</p>
-
-<p align="center">
-  <img src="docs/images/folder-mindmap.png" width="420" alt="文件夹详情与思维导图"><br>
-  <sub><b>文件夹思维导图</b> —— 点击文件夹行即可展开内容；Ctrl+滚轮缩放、拖动平移、逐层展开；双击打开，右键加入抽屉。</sub>
+  <img src="docs/images/main-window.png" width="820" alt="主窗口：每个网站显示自己的图标"><br>
+  <sub><b>主窗口</b> —— 网站、文件夹、文件放在同一个列表里；每个网站显示自己的图标，列表 / 网格切换，拖动排序，收藏置顶。</sub>
 </p>
 
 <table>
+<tr>
+<td width="50%" align="center" valign="top">
+  <img src="docs/images/folder-mindmap.png" width="300" alt="文件夹详情与思维导图"><br>
+  <sub><b>文件夹思维导图</b> —— 点击文件夹行即可展开内容；Ctrl+滚轮缩放、拖动平移、逐层展开；双击打开，右键加入抽屉。</sub>
+</td>
+<td width="50%" align="center" valign="top">
+  <img src="docs/images/site-browser.png" width="300" alt="右键网站选择浏览器打开"><br>
+  <sub><b>按网站选浏览器</b> —— 快速面板里右键网站，临时换一个浏览器打开；详情面板「打开方式」保存为默认。</sub>
+</td>
+</tr>
 <tr>
 <td width="50%" align="center" valign="top">
   <img src="docs/images/quick-panel.png" width="300" alt="快速面板"><br>
   <sub><b>快速面板</b> —— <code>Ctrl+Alt+Shift+L/F</code> 呼出的紧凑树状列表。</sub>
 </td>
 <td width="50%" align="center" valign="top">
-  <img src="docs/images/settings.png" width="330" alt="设置"><br>
+  <img src="docs/images/settings.png" width="300" alt="设置"><br>
   <sub><b>设置</b> —— 语言、主题、快捷键、书签同步、AI 分类建议。</sub>
 </td>
 </tr>
