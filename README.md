@@ -78,6 +78,8 @@ searchable list and one hotkey away.
 
 - A compact Spotlight-style tree instead of the full window, centered on the current screen.
 - `Ctrl + Alt + Shift + L` — websites; `Ctrl + Alt + Shift + F` — folders (both configurable).
+- Optional mouse side buttons: back opens the websites panel, forward the folders panel. While the
+  switch is on, Drawer takes over the mouse back / forward buttons.
 - `↑` / `↓` select, `→` expand, `Enter` open, `Esc` close, `Tab` switch panel; type to search.
 
 **Folder mind map**
@@ -128,10 +130,11 @@ deleting it.
 | `Ctrl + Alt + Space` | Show / hide the main window |
 | `Ctrl + Alt + Shift + L` | Quick panel: websites |
 | `Ctrl + Alt + Shift + F` | Quick panel: folders |
+| Mouse Back / Mouse Forward (optional) | Quick panel: websites / folders |
 | `↑` `↓` / `→` / `Enter` / `Esc` / `Tab` | Navigate / expand / open / close / switch panel |
 
 Every hotkey is configurable in **Settings → Shortcuts**, including `Ctrl / Alt / Shift / Win`
-combinations.
+combinations. The mouse side buttons are a separate switch in the same section.
 
 ## FAQ
 
@@ -160,7 +163,7 @@ A Chinese user manual ships with the app and is also in this repository:
 It covers installation, adding resources, the folder mind map, quick-panel hotkeys, bookmark sync,
 the Explorer menu, AI suggestions, data and backups, and troubleshooting.
 
-See [CHANGELOG.md](CHANGELOG.md) for the tagged milestones (`v0.1.0` … `v1.0.6`).
+See [CHANGELOG.md](CHANGELOG.md) for the tagged milestones (`v0.1.0` … `v1.1.0`).
 
 ## Build from source
 
@@ -206,10 +209,10 @@ cd app
 flutter test                                  # 75 tests: widgets, protocol, JSON
 
 cd backend
-python -m unittest discover -s tests -t .     # 329 tests (1 skipped: symlink)
+python -m unittest discover -s tests -t .     # 335 tests (1 skipped: symlink)
 ```
 
-That is 403 passing tests across the Flutter client and the Python backend.
+That is 410 passing tests across the Flutter client and the Python backend.
 
 ## Under the hood
 

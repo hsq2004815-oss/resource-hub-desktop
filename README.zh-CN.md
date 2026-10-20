@@ -74,6 +74,7 @@
 
 - 不打开完整窗口，在屏幕中央弹出一个 Spotlight 风格的紧凑树状列表。
 - `Ctrl + Alt + Shift + L` 网站树；`Ctrl + Alt + Shift + F` 文件夹树（都可以在设置里改）。
+- 可选鼠标侧键：后侧键打开网站面板，前侧键打开文件夹面板；开启后会接管鼠标的后退 / 前进键。
 - `↑` / `↓` 选择，`→` 展开，`Enter` 打开，`Esc` 关闭，`Tab` 切换面板；直接输入即搜索。
 
 **文件夹思维导图**
@@ -116,9 +117,10 @@
 | `Ctrl + Alt + Space` | 显示 / 隐藏主窗口 |
 | `Ctrl + Alt + Shift + L` | 快速面板：网站 |
 | `Ctrl + Alt + Shift + F` | 快速面板：文件夹 |
+| 鼠标侧键（可选） | 快速面板：后侧键网站 / 前侧键文件夹 |
 | `↑` `↓` / `→` / `Enter` / `Esc` / `Tab` | 选择 / 展开 / 打开 / 关闭 / 切换面板 |
 
-所有快捷键都可以在**设置 → 快捷键**里重新录制，支持 `Ctrl / Alt / Shift / Win` 组合。
+所有快捷键都可以在**设置 → 快捷键**里重新录制，支持 `Ctrl / Alt / Shift / Win` 组合。鼠标侧键是同一区域里的独立开关。
 
 ## 常见问题
 
@@ -143,7 +145,7 @@
 内容覆盖安装、添加资源、文件夹思维导图、快速面板快捷键、浏览器书签同步、右键菜单、AI 分类建议、
 数据与备份、常见问题排查。
 
-版本更新见 [CHANGELOG.md](CHANGELOG.md)（从 `v0.1.0` 到 `v1.0.6`）。
+版本更新见 [CHANGELOG.md](CHANGELOG.md)（从 `v0.1.0` 到 `v1.1.0`）。
 
 ## 从源码构建
 
@@ -187,10 +189,10 @@ cd app
 flutter test                                  # 75 个测试：组件、协议、JSON
 
 cd backend
-python -m unittest discover -s tests -t .     # 329 个测试（跳过 1 个：符号链接）
+python -m unittest discover -s tests -t .     # 335 个测试（跳过 1 个：符号链接）
 ```
 
-Flutter 客户端 + Python 后端合计 403 个通过的测试。
+Flutter 客户端 + Python 后端合计 410 个通过的测试。
 
 ## 这个项目是怎么来的
 

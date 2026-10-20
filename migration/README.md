@@ -31,6 +31,7 @@
 | [`phase23-mindmap-drag.md`](phase23-mindmap-drag.md) | 思维导图拖动修复：连线层吞掉指针（内容矩形内全拖不动）+ 拖动重建整树导致发涩；命中测试、node 拖动平移、notifier/布局缓存 |
 | [`phase24-quick-panel-maximized.md`](phase24-quick-panel-maximized.md) | 快速面板尺寸修复：主窗口最大化时快捷键会弹出全屏大小的面板；`IsZoomed` 处理 + 关闭后恢复最大化 |
 | [`phase25-chrome-account-bookmarks.md`](phase25-chrome-account-bookmarks.md) | Chrome 书签同步修复：登录账号后书签写在 `AccountBookmarks`，旧代码只读 `Bookmarks`；两种文件合并读取 |
+| [`phase26-mouse-side-buttons.md`](phase26-mouse-side-buttons.md) | 鼠标侧键快速面板：全局 `WH_MOUSE_LL` 钩子复用 hotkey 事件通道，可开关、吞掉后退/前进 |
 | [`adr/ADR-001-tray-hotkey-ownership.md`](adr/ADR-001-tray-hotkey-ownership.md) | 托盘/热键归属、导入导出入口、数据覆盖风险 |
 | [`adr/ADR-002-native-shell-ownership.md`](adr/ADR-002-native-shell-ownership.md) | Windows 壳层归属（runner vs 后端） |
 
@@ -42,10 +43,10 @@ Python 后端负责数据读写、全局热键、导入导出与路径操作，�
 ## 验证入口
 
 ```powershell
-# 后端 329 个测试
+# 后端 335 个测试
 cd backend; D:\miniconda3\python.exe -m unittest discover -s tests -t .
 
-# 前端 analyze + 75 个测试
+# 前端 analyze + 76 个测试
 cd ..\app; flutter analyze; flutter test
 
 # 实机壳层（关窗→托盘、热键、二次启动、拖拽)
@@ -56,6 +57,9 @@ D:\miniconda3\python.exe migration\tools\verify_quick_panel.py
 
 # 实机快速面板尺寸（普通 / 最大化窗口下都必须是 480×600 HUD；Phase 24）
 D:\miniconda3\python.exe migration\tools\verify_quick_panel_size.py --build release\ResourceHub-Desktop-20261019-0650
+
+# 实机鼠标侧键（全局 WH_MOUSE_LL：hook 注册 + XBUTTON1/2 事件；Windows）
+D:\miniconda3\python.exe migration\tools\verify_mouse_side_buttons.py
 
 # 实机浏览器书签同步（临时复制发布包 + 假浏览器配置，不碰真实数据目录）
 D:\miniconda3\python.exe migration\tools\verify_bookmark_sync.py
@@ -80,5 +84,5 @@ powershell -NoProfile -File .\build-flutter-release.ps1
 D:\miniconda3\python.exe migration\tools\verify_release.py
 ```
 
-产物：`release\ResourceHub-Desktop-20261017-1835\`（Flutter exe + `backend\` 冻结后端）。
+产物：`release\ResourceHub-Desktop-20261020-0246\`（Flutter exe + `backend\` 冻结后端）。
 原 `resource_hub.pyw` 未修改，仍可独立运行（回滚路径）。
