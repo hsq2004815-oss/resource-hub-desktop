@@ -37,7 +37,8 @@ searchable list and one hotkey away.
 - **A quick panel, not a window.** `Ctrl + Alt + Shift + L` / `F` drops a compact tree in the middle
   of the screen: type, arrow, Enter — gone.
 - **Nothing leaves your machine.** No account, no sync server, no telemetry. All data is a few JSON
-  files next to the executable.
+  files next to the executable. The only requests go to the sites you saved (their favicon, cached
+  locally afterwards) and, if you enable it, your own AI endpoint.
 
 ## Screenshots
 
@@ -69,6 +70,8 @@ searchable list and one hotkey away.
 **Resource management**
 
 - Two resource types: websites and local paths (folders or single files).
+- Every website shows its own favicon: fetched once, cached next to the executable, used in the list,
+  grid, quick panel and details panel. Sites without an icon keep the generic glyph.
 - Search by name, path, type, category or note; filter by category.
 - Favorites pinned to the top; drag rows or cards to arrange the order, with a 5-second undo.
 - List and grid views; drag files or folders from Explorer onto the window to add them.
@@ -93,6 +96,9 @@ searchable list and one hotkey away.
 - Chrome / Edge bookmark sync: new bookmarks are imported automatically from the local bookmark
   files (read-only). An optional unpacked MV3 extension adds two-way delete / rename sync; the
   extension folder ships with the app.
+- Per-site browser: installed browsers are detected automatically. Right-click a site in the quick
+  panel to open it once in another browser; the details panel's **Open with** dropdown saves the
+  site's default. Bookmark imports remember their origin browser.
 - Explorer context menu: right-click a folder background or folder icon → **Add to Drawer**
   (Windows 11: under "Show more options"). The entries can be switched off in Settings.
 - Tray icon, close-to-tray, optional launch at startup, global hotkey with `Ctrl / Alt / Shift / Win`
@@ -108,7 +114,7 @@ searchable list and one hotkey away.
 
 - Path health check: missing paths are flagged; open or reveal any resource in Explorer.
 - Chinese / English UI, light / dark / follow-system theme.
-- 100% local, no account, no telemetry.
+- Local data, no account, no telemetry.
 
 ## Install
 
@@ -140,8 +146,9 @@ combinations. The mouse side buttons are a separate switch in the same section.
 
 **Is it free?** Yes — MIT licensed, free to use, modify and redistribute.
 
-**Does it send anything to the internet?** No. The only network call is the optional AI suggestion
-feature, and it uses the endpoint and API key you configure yourself.
+**Does it send anything to the internet?** Only two things: it downloads the favicon of the websites
+you saved (from those sites, then caches it locally), and the optional AI suggestion feature uses the
+endpoint and API key you configure yourself.
 
 **Why does Windows SmartScreen warn me?** The executable is not code-signed (that costs money and
 this is a self-funded open-source project). The full source is in this repository; build it
@@ -163,7 +170,7 @@ A Chinese user manual ships with the app and is also in this repository:
 It covers installation, adding resources, the folder mind map, quick-panel hotkeys, bookmark sync,
 the Explorer menu, AI suggestions, data and backups, and troubleshooting.
 
-See [CHANGELOG.md](CHANGELOG.md) for the tagged milestones (`v0.1.0` … `v1.1.0`).
+See [CHANGELOG.md](CHANGELOG.md) for the tagged milestones (`v0.1.0` … `v1.2.0`).
 
 ## Build from source
 
@@ -206,13 +213,13 @@ Environment overrides used by the client: `RH_PYTHON`, `RH_BACKEND_SCRIPT`, `RH_
 
 ```powershell
 cd app
-flutter test                                  # 75 tests: widgets, protocol, JSON
+flutter test                                  # 81 tests: widgets, protocol, JSON
 
 cd backend
-python -m unittest discover -s tests -t .     # 335 tests (1 skipped: symlink)
+python -m unittest discover -s tests -t .     # 359 tests (1 skipped: symlink)
 ```
 
-That is 410 passing tests across the Flutter client and the Python backend.
+That is 440 passing tests across the Flutter client and the Python backend.
 
 ## Under the hood
 
@@ -224,7 +231,7 @@ This repository contains two generations of the app:
 | `resource_hub.pyw` | Legacy single-file Tkinter app (~2.9k lines), kept for reference and rollback; no longer developed |
 
 The rewrite is documented phase by phase in [`migration/`](migration/): audit, design system,
-business layer, IPC protocol, packaging, shell integration and 25 UI/feature phases. It doubles as
+business layer, IPC protocol, packaging, shell integration and 27 UI/feature phases. It doubles as
 a readable case study of splitting a monolithic Tkinter app into a UI and a testable backend
 **without changing the user's data format** — existing `sites.json` / `folders.json` files keep
 working.
