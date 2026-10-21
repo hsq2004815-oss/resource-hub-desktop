@@ -14,8 +14,8 @@ abstract final class NativeShell {
   static const MethodChannel _channel = MethodChannel('resource_hub/window');
   static final StreamController<List<String>> _drops =
       StreamController<List<String>>.broadcast();
-  static final StreamController<void> _quickDismissals =
-      StreamController<void>.broadcast();
+  static final StreamController<String> _quickDismissals =
+      StreamController<String>.broadcast();
   static final StreamController<String> _addFolderRequests =
       StreamController<String>.broadcast();
   static bool _handlerInstalled = false;
@@ -27,10 +27,12 @@ abstract final class NativeShell {
   }
 
   /// Phase 16: the runner asks for the quick panel to close — the window lost
-  /// focus, the tray icon was clicked, a second instance woke the app, or Alt+F4
-  /// was pressed. [WindowControl] only sends commands; this is the matching
-  /// incoming side and keeps the channel's single message handler here.
-  static Stream<void> get quickDismissals {
+  /// focus (`deactivate`), the tray icon was clicked, a second instance woke the
+  /// app, or Alt+F4 was pressed. The reason decides whether the main window comes
+  /// back; clicking another app must not pop it over the window they just picked.
+  /// [WindowControl] only sends commands; this is the matching incoming side and
+  /// keeps the channel's single message handler here.
+  static Stream<String> get quickDismissals {
     _installHandler();
     return _quickDismissals.stream;
   }
@@ -91,7 +93,8 @@ abstract final class NativeShell {
     _handlerInstalled = true;
     _channel.setMethodCallHandler((MethodCall call) async {
       if (call.method == 'quickDismissed') {
-        _quickDismissals.add(null);
+        final Object? reason = call.arguments;
+        _quickDismissals.add(reason is String ? reason : '');
         return null;
       }
       if (call.method == 'addFolderPath') {

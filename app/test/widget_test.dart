@@ -1642,7 +1642,7 @@ void main() {
     expect(find.byTooltip('新增资源'), findsOneWidget);
   });
 
-  testWidgets('visible-window dismiss repaints before restoring geometry',
+  testWidgets('clicking another window hides the app instead of popping the main window',
       (WidgetTester tester) async {
     final FakeApi api = FakeApi();
     final List<MethodCall> calls = <MethodCall>[];
@@ -1661,7 +1661,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('项目主目录'), findsOneWidget);
 
-    await _emitQuickDismiss();
+    await _emitQuickDismiss(reason: 'deactivate');
     await tester.pumpAndSettle();
 
     final MethodCall exit = calls.lastWhere(
@@ -1669,9 +1669,37 @@ void main() {
     );
     expect(
       (exit.arguments as Map<Object?, Object?>)['visibility'],
-      'auto',
-      reason: 'a visible window is restored after the full UI has repainted',
+      'hide',
+      reason: 'clicking another app must not expand the main window over it',
     );
+    expect(find.byTooltip('新增资源'), findsOneWidget);
+  });
+
+  testWidgets('Escape from a visible-window HUD restores the window',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    final List<MethodCall> calls = <MethodCall>[];
+    await pumpApp(
+      tester,
+      api: api,
+      shellHandler: (MethodCall call) async {
+        calls.add(call);
+        if (call.method == 'isVisible') {
+          return true;
+        }
+        return null;
+      },
+    );
+    api.emitHotkey('quickLinks');
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    final MethodCall exit = calls.lastWhere(
+      (MethodCall call) => call.method == 'exitQuickMode',
+    );
+    expect((exit.arguments as Map<Object?, Object?>)['visibility'], 'auto');
     expect(find.byTooltip('新增资源'), findsOneWidget);
   });
 
@@ -2032,12 +2060,12 @@ Future<void> _emitAddFolder(String path) {
 }
 
 /// Delivers the runner's "close the quick panel" notification.
-Future<void> _emitQuickDismiss() {
+Future<void> _emitQuickDismiss({String reason = 'deactivate'}) {
   return TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .handlePlatformMessage(
     'resource_hub/window',
     const StandardMethodCodec().encodeMethodCall(
-      MethodCall('quickDismissed'),
+      MethodCall('quickDismissed', reason),
     ),
     (ByteData? _) {},
   );

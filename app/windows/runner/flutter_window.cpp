@@ -488,7 +488,7 @@ void FlutterWindow::ToggleVisibility() {
   if (quick_mode_) {
     // Tray click / wake message while the HUD is up: close the HUD and return to
     // the pre-quick window state. Dart restores its layout from the notification.
-    NotifyQuickDismissed();
+    NotifyQuickDismissed("tray");
     ExitQuickMode();
     return;
   }
@@ -610,6 +610,12 @@ void FlutterWindow::ExitQuickMode(int visibility) {
                  quick_saved_rect_.right - quick_saved_rect_.left,
                  quick_saved_rect_.bottom - quick_saved_rect_.top,
                  SWP_FRAMECHANGED | SWP_NOACTIVATE);
+  if (!show_window) {
+    // Restoring the saved GWL_STYLE re-applies WS_VISIBLE, and Windows shows the
+    // window again on that call even after the SW_HIDE above. Hide once more,
+    // after the style/geometry restore, so "dismiss to tray" really stays hidden.
+    ::ShowWindow(handle, SW_HIDE);
+  }
   if (show_window) {
     // Do not steal the foreground on the automatic path: the user likely
     // clicked another window and that is exactly why the HUD is closing.
@@ -632,14 +638,18 @@ void FlutterWindow::ExitQuickMode(int visibility) {
   }
 }
 
-void FlutterWindow::NotifyQuickDismissed() {
+void FlutterWindow::NotifyQuickDismissed(const std::string& reason) {
   if (!window_channel_ || !quick_mode_ || quick_dismiss_posted_) {
     return;
   }
   // One notification per quick session; Dart restores its UI and calls
-  // exitQuickMode(), which clears the flag.
+  // exitQuickMode(), which clears the flag. The reason tells Dart whether the
+  // window should come back (tray / wake / close) or stay out of the way
+  // (deactivate: the user clicked another app).
   quick_dismiss_posted_ = true;
-  window_channel_->InvokeMethod("quickDismissed", nullptr);
+  window_channel_->InvokeMethod(
+      "quickDismissed",
+      std::make_unique<flutter::EncodableValue>(reason));
 }
 
 void FlutterWindow::HandleAddFolderRequest(const std::wstring& path) {
@@ -685,7 +695,7 @@ void FlutterWindow::CheckQuickForeground() {
     return;
   }
   if (quick_had_foreground_) {
-    NotifyQuickDismissed();
+    NotifyQuickDismissed("deactivate");
   }
 }
 
@@ -828,7 +838,7 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   // A second launch asks the running instance to come to the front.
   if (message == kWakeMessage) {
     if (quick_mode_) {
-      NotifyQuickDismissed();
+      NotifyQuickDismissed("wake");
       ExitQuickMode();
     }
     ShowFromTray();
@@ -849,7 +859,7 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   if (quick_mode_ && message == WM_ACTIVATE &&
       LOWORD(wparam) == WA_INACTIVE) {
     if (!quick_activation_settling_) {
-      NotifyQuickDismissed();
+      NotifyQuickDismissed("deactivate");
     }
     return 0;
   }
@@ -888,7 +898,7 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       // The quick panel has no title bar; Alt+F4 asks the shell to close it, so
       // treat it as "dismiss the HUD" rather than "hide the app".
       if (quick_mode_) {
-        NotifyQuickDismissed();
+        NotifyQuickDismissed("close");
         return 0;
       }
       // Legacy behaviour: the close button hides to the tray, it does not quit.

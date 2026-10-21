@@ -325,3 +325,26 @@ Windows 第一次把前台切到别的进程时**不一定**给顶层窗口投�
 
 说明：面板关闭延迟最多约 100 ms（定时器周期），只存在于 HUD 打开期间。
 
+## 18.3 / v1.2.1 — 点击其他窗口不再弹出主界面
+
+**反馈**：调出快速面板后点击其他窗口，主界面会重新展开，并且会抢到前台。
+
+**根因（两层）**：
+
+1. runner 只通知 Dart「HUD 该关了」，没有说明是**点了别的窗口**还是托盘/第二次启动，Dart 一律按
+   「回到打开前的状态」处理；主窗口原本可见时就会重新展开。
+2. 即使走「隐藏回托盘」分支，`ExitQuickMode` 先 `ShowWindow(SW_HIDE)`、再恢复保存的 `GWL_STYLE`；
+   保存的样式里带着 `WS_VISIBLE`，恢复样式会把窗口重新显示出来——从托盘打开的 HUD 关闭时同样会
+   闪出主窗口。
+
+**修复**：
+
+- `quickDismissed` 事件带原因（`deactivate` / `tray` / `wake` / `close`）。`deactivate`（点击其他进程）
+  直接 `exitQuickMode(visibility: hide)` 回托盘，不再展开主窗口；托盘点击、第二次启动、Alt+F4
+  保持「回到打开前状态」。
+- `ExitQuickMode` 在恢复样式和几何之后，隐藏分支再执行一次 `ShowWindow(SW_HIDE)`，抵消
+  `WS_VISIBLE` 恢复；Esc / 再按热键的「还原主窗口」路径不变。
+
+**验证**（实机，v1.2.1 打包版）：主窗口可见 → HUD → 点其他窗口：窗口隐藏（1618×1072 几何已恢复）
+PASS；托盘状态 → HUD → Esc：隐藏 PASS；主窗口可见 → HUD → Esc：还原 PASS；Flutter 82 / 82 PASS。
+

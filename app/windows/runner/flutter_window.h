@@ -60,9 +60,11 @@ class FlutterWindow : public Win32Window {
   // HUD-sized window never grows back on screen for a frame).
   void ExitQuickMode(int visibility = 0);
 
-  // Tells Dart that the quick panel should close (focus was lost, tray click,
-  // second instance, Alt+F4). Dart calls exitQuickMode() and restores its UI.
-  void NotifyQuickDismissed();
+  // Tells Dart that the quick panel should close. `reason` is "deactivate"
+  // (the user clicked another app), "tray", "wake" (second instance) or
+  // "close" (Alt+F4); Dart decides whether the main window comes back or the
+  // app returns to the tray. Dart calls exitQuickMode() and restores its UI.
+  void NotifyQuickDismissed(const std::string& reason);
 
   // Phase 19: the Explorer context-menu entry asks Dart to add this folder.
   // Buffered until Dart calls `shellAddReady`, then published as addFolderPath.

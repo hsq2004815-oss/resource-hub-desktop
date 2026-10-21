@@ -174,9 +174,11 @@ class _HomePageState extends State<HomePage> {
     // window toggle happens here so the search box can take focus afterwards.
     _eventSubscription = widget.api.events.listen(_onBackendEvent);
     // The runner asks for the quick panel to close when the window loses focus,
-    // the tray icon is clicked, or Alt+F4 is pressed (Phase 16).
-    _quickDismissSubscription =
-        NativeShell.quickDismissals.listen((_) => unawaited(_closeQuick()));
+    // the tray icon is clicked, or Alt+F4 is pressed (Phase 16). A click on
+    // another app must not pop the main window back over it.
+    _quickDismissSubscription = NativeShell.quickDismissals.listen(
+      (String reason) => unawaited(_handleQuickDismissed(reason)),
+    );
     // Phase 19: Explorer context-menu entries are forwarded by the runner.
     _shellAddSubscription = NativeShell.addFolderRequests.listen(
       (String path) => unawaited(_handleShellAddFolder(path)),
@@ -442,7 +444,10 @@ class _HomePageState extends State<HomePage> {
         Future<void>.delayed(const Duration(milliseconds: 120)),
       ]);
 
-  Future<void> _closeQuick({bool showFullWindow = false}) async {
+  Future<void> _closeQuick({
+    bool showFullWindow = false,
+    bool hideWindow = false,
+  }) async {
     if (!_quickMode) {
       return;
     }
@@ -466,10 +471,11 @@ class _HomePageState extends State<HomePage> {
       }
       return;
     }
-    if (!wasVisible && !showFullWindow) {
-      // Opened over the tray and closing back to the tray: the runner hides the
-      // window before restoring the saved geometry, so it never grows back on
-      // screen for a frame. The full UI is rebuilt while the window is hidden.
+    if (hideWindow || (!wasVisible && !showFullWindow)) {
+      // Clicked another app / opened over the tray and closing back to the
+      // tray: the runner hides the window before restoring the saved geometry,
+      // so it never grows back on screen for a frame. The full UI is rebuilt
+      // while the window is hidden.
       await WindowControl.exitQuickMode(
         visibility: QuickExitVisibility.hide,
       );
@@ -492,6 +498,12 @@ class _HomePageState extends State<HomePage> {
     );
     _searchFocus.requestFocus();
   }
+
+  /// Runner-side dismissal. Clicking another window (`deactivate`) cancels the
+  /// HUD back to the tray; tray clicks, a second launch and Alt+F4 keep the old
+  /// "return to where you were" behaviour.
+  Future<void> _handleQuickDismissed(String reason) =>
+      _closeQuick(hideWindow: reason == 'deactivate');
 
   void _switchQuickKind() {
     if (!mounted) {
