@@ -511,6 +511,12 @@ class _ResourceDetailPanelState extends State<ResourceDetailPanel> {
         value: item.path,
         onCopy: () => widget.onCopyText(item.path),
       ),
+      // Only worth a line once the row has actually been used.
+      if (item.openCount > 0)
+        _InfoRow(
+          label: t.tx('opened_count'),
+          value: t.tx('opened_count_value', <Object?>[item.openCount]),
+        ),
     ];
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.lg),

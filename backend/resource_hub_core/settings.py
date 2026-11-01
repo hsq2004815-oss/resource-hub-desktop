@@ -23,6 +23,9 @@ DEFAULT_HOTKEY_ID = "Ctrl + Alt + Space"
 DEFAULT_QUICK_PANEL_HOTKEY_ID = "Alt + Space"
 SUPPORTED_LANGUAGES = frozenset({"zh", "en"})
 
+#: Phase 33: quick panel ordering modes.
+QUICK_PANEL_ORDERS = ("manual", "grouped", "frequent")
+
 #: Phase 22: DeepSeek-compatible AI category suggestions (opt-in, off by default).
 DEFAULT_AI_BASE_URL = "https://api.deepseek.com"
 DEFAULT_AI_MODEL = "deepseek-chat"
@@ -71,10 +74,10 @@ class Settings:
     global_hotkey_enabled: bool = True
     global_hotkey_id: str = DEFAULT_HOTKEY_ID
     quick_panel_hotkey_id: str = DEFAULT_QUICK_PANEL_HOTKEY_ID
-    #: Quick panel row order. Off = flat list in the stored order (the same
+    #: Quick panel row order: manual = flat in the stored order (the same
     #: order the main window shows, so dragging in the HUD reorders both);
-    #: on = grouped under category headers, the original Phase 16 layout.
-    quick_panel_grouped: bool = False
+    #: grouped = under category headers; frequent = ranked by usage.
+    quick_panel_order: str = "manual"
     #: Mouse side buttons (XBUTTON1/2) open the quick panels. Off by default:
     #: the hook swallows the back/forward buttons system-wide.
     mouse_side_buttons_enabled: bool = False
@@ -96,7 +99,7 @@ class Settings:
             "globalHotkeyEnabled": self.global_hotkey_enabled,
             "globalHotkeyId": self.global_hotkey_id,
             "quickPanelHotkeyId": self.quick_panel_hotkey_id,
-            "quickPanelGrouped": self.quick_panel_grouped,
+            "quickPanelOrder": self.quick_panel_order,
             "mouseSideButtonsEnabled": self.mouse_side_buttons_enabled,
             "launchAtStartup": self.launch_at_startup,
             "bookmarkSyncEnabled": self.bookmark_sync_enabled,
@@ -164,9 +167,17 @@ class Settings:
         if isinstance(shell_menu, bool):
             settings = replace(settings, shell_context_menu_enabled=shell_menu)
 
-        panel_grouped = raw.get("quickPanelGrouped")
-        if isinstance(panel_grouped, bool):
-            settings = replace(settings, quick_panel_grouped=panel_grouped)
+        panel_order = raw.get("quickPanelOrder")
+        if isinstance(panel_order, str) and panel_order.strip() in QUICK_PANEL_ORDERS:
+            settings = replace(settings, quick_panel_order=panel_order.strip())
+        else:
+            # Files written by v1.3-v1.5 carry the two-state switch instead.
+            legacy_grouped = raw.get("quickPanelGrouped")
+            if isinstance(legacy_grouped, bool):
+                settings = replace(
+                    settings,
+                    quick_panel_order="grouped" if legacy_grouped else "manual",
+                )
 
         # Phase 22. The API key is deliberately *not* a settings field: a key in
         # settings.json would be plaintext, so it lives in AiKeyStore instead.

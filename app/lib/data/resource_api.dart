@@ -61,6 +61,9 @@ abstract interface class ResourceApi {
   /// overrides it (empty string = system default browser).
   Future<void> open(ViewMode mode, String id, {String? browser});
 
+  /// Counts an open the native shell performed, so the usage ranking sees it.
+  Future<void> recordOpen(ViewMode mode, String id);
+
   Future<void> reveal(ViewMode mode, String id);
 
   Future<PathCheckOutcome> checkPaths(ViewMode mode);

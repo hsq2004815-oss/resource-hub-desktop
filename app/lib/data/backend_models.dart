@@ -148,13 +148,42 @@ const String kBookmarkDeleteRemove = 'remove';
 const String kBookmarkDeleteKeep = 'keep';
 
 /// Settings as stored by the backend (`settings.json`).
+/// Phase 33: how the quick panel orders its rows.
+enum QuickPanelOrder {
+  /// Flat, in the stored order (dragging in the HUD reorders both windows).
+  manual('manual'),
+
+  /// Grouped under category headers.
+  grouped('grouped'),
+
+  /// Ranked by how often and how recently each row was opened.
+  frequent('frequent');
+
+  const QuickPanelOrder(this.code);
+
+  final String code;
+
+  static QuickPanelOrder fromCode(String? code) {
+    for (final QuickPanelOrder value in QuickPanelOrder.values) {
+      if (value.code == code) {
+        return value;
+      }
+    }
+    return QuickPanelOrder.manual;
+  }
+
+  /// The mode one click on the panel's footer button switches to.
+  QuickPanelOrder get next =>
+      QuickPanelOrder.values[(index + 1) % QuickPanelOrder.values.length];
+}
+
 class AppSettings {
   const AppSettings({
     this.language = 'zh',
     this.globalHotkeyEnabled = true,
     this.globalHotkeyId = kDefaultGlobalHotkey,
     this.quickPanelHotkeyId = kDefaultQuickPanelHotkey,
-    this.quickPanelGrouped = false,
+    this.quickPanelOrder = QuickPanelOrder.manual,
     this.mouseSideButtonsEnabled = false,
     this.bookmarkSyncEnabled = kDefaultBookmarkSyncEnabled,
     this.bookmarkCustomDir = kDefaultBookmarkCustomDir,
@@ -174,10 +203,9 @@ class AppSettings {
   /// again while the panel is open switches to the other tree.
   final String quickPanelHotkeyId;
 
-  /// Quick panel row order. False = flat list in the stored order (the same
-  /// order the main window shows, so dragging in the HUD reorders both);
-  /// true = grouped under category headers.
-  final bool quickPanelGrouped;
+  /// Quick panel row order (Phase 33): manual = flat in the stored order,
+  /// grouped = under category headers, frequent = ranked by usage.
+  final QuickPanelOrder quickPanelOrder;
 
   /// Opt-in: XBUTTON1 ("back") opens the web links HUD and XBUTTON2
   /// ("forward") the folders HUD. The hook swallows both buttons.
@@ -209,7 +237,7 @@ class AppSettings {
     bool? globalHotkeyEnabled,
     String? globalHotkeyId,
     String? quickPanelHotkeyId,
-    bool? quickPanelGrouped,
+    QuickPanelOrder? quickPanelOrder,
     bool? mouseSideButtonsEnabled,
     bool? bookmarkSyncEnabled,
     String? bookmarkCustomDir,
@@ -225,7 +253,7 @@ class AppSettings {
       globalHotkeyEnabled: globalHotkeyEnabled ?? this.globalHotkeyEnabled,
       globalHotkeyId: globalHotkeyId ?? this.globalHotkeyId,
       quickPanelHotkeyId: quickPanelHotkeyId ?? this.quickPanelHotkeyId,
-      quickPanelGrouped: quickPanelGrouped ?? this.quickPanelGrouped,
+      quickPanelOrder: quickPanelOrder ?? this.quickPanelOrder,
       mouseSideButtonsEnabled:
           mouseSideButtonsEnabled ?? this.mouseSideButtonsEnabled,
       bookmarkSyncEnabled: bookmarkSyncEnabled ?? this.bookmarkSyncEnabled,
@@ -245,7 +273,7 @@ class AppSettings {
         'globalHotkeyEnabled': globalHotkeyEnabled,
         'globalHotkeyId': globalHotkeyId,
         'quickPanelHotkeyId': quickPanelHotkeyId,
-        'quickPanelGrouped': quickPanelGrouped,
+        'quickPanelOrder': quickPanelOrder.code,
         'mouseSideButtonsEnabled': mouseSideButtonsEnabled,
         'bookmarkSyncEnabled': bookmarkSyncEnabled,
         'bookmarkCustomDir': bookmarkCustomDir,
@@ -264,7 +292,9 @@ class AppSettings {
       globalHotkeyId: json['globalHotkeyId'] as String? ?? kDefaultGlobalHotkey,
       quickPanelHotkeyId:
           json['quickPanelHotkeyId'] as String? ?? kDefaultQuickPanelHotkey,
-      quickPanelGrouped: json['quickPanelGrouped'] as bool? ?? false,
+      quickPanelOrder: QuickPanelOrder.fromCode(
+        json['quickPanelOrder'] as String?,
+      ),
       mouseSideButtonsEnabled:
           json['mouseSideButtonsEnabled'] as bool? ?? false,
       bookmarkSyncEnabled: json['bookmarkSyncEnabled'] as bool? ??

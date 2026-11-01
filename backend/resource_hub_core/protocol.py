@@ -237,6 +237,7 @@ class Dispatcher:
             "resources.checkPaths": self._check_paths,
             "resources.open": self._open,
             "resources.reveal": self._reveal,
+            "resources.recordOpen": self._record_open,
             "resources.drop": self._drop,
             "resources.export": self._export,
             "resources.import": self._import,
@@ -1172,7 +1173,21 @@ class Dispatcher:
             )
         else:
             open_path(item.target)
+        # Counted only once the shell accepted it, so a failed open does not
+        # inflate the quick panel's "frequent" ranking.
+        self.state.service.record_open(mode, item.id)
         return {"opened": True}
+
+    def _record_open(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        """Count an open that the native shell performed (Phase 33).
+
+        The runner hands URLs and paths to the shell directly, so those opens
+        never pass through resources.open; the window reports them here.
+        """
+        self._require_loaded()
+        mode = self._require_mode(params)
+        self.state.service.record_open(mode, self._require_str(params, "id"))
+        return {"counted": True}
 
     def _reveal(self, params: Mapping[str, Any]) -> dict[str, Any]:
         self._require_loaded()

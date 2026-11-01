@@ -27,7 +27,7 @@ from .models import (
     with_changes,
 )
 from .normalize import comparable_value, normalize_folder_path, normalize_url, now_iso
-from .storage import CorruptDataError, JsonFileStore
+from .storage import CorruptDataError, JsonFileStore, StorageError
 
 #: One-time order migration marker (Phase 8).
 #:
@@ -419,11 +419,37 @@ class ResourceService:
             item_id=item_id,
             created_at=existing.created_at,
             favorite=existing.favorite,
+            # Usage counters survive an edit; only opening them changes them.
+            open_count=getattr(existing, "open_count", 0),
+            last_opened_at=getattr(existing, "last_opened_at", ""),
         )
         index = self._items[mode].index(existing)
         self._items[mode][index] = updated
         self._save(mode)
         return updated
+
+    def record_open(self, mode: str, item_id: str) -> None:
+        """Count one successful open so the quick panel can rank by usage.
+
+        Best effort: a missing row (deleted in the meantime) is ignored, and a
+        failed save must not break opening the resource itself.
+        """
+        self._require_loaded()
+        try:
+            existing = self.get(mode, item_id)
+        except NotFoundError:
+            return
+        updated = replace(
+            existing,
+            open_count=getattr(existing, "open_count", 0) + 1,
+            last_opened_at=now_iso(),
+        )
+        index = self._items[mode].index(existing)
+        self._items[mode][index] = updated
+        try:
+            self._save(mode)
+        except StorageError:
+            pass
 
     def delete(self, mode: str, item_id: str) -> bool:
         """Remove an entry. Returns ``False`` when the id was already gone."""
@@ -620,6 +646,8 @@ class ResourceService:
         item_id: str | None = None,
         created_at: str | None = None,
         favorite: bool = False,
+        open_count: int = 0,
+        last_opened_at: str = "",
     ) -> Resource:
         common = {
             "id": item_id or str(uuid.uuid4()),
@@ -628,6 +656,8 @@ class ResourceService:
             "note": note,
             "favorite": favorite,
             "created_at": created_at or now_iso(),
+            "open_count": open_count,
+            "last_opened_at": last_opened_at,
         }
         if mode == "links":
             return Site(

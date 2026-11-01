@@ -186,6 +186,15 @@ class BackendRepository implements ResourceApi {
   }
 
   @override
+  @override
+  Future<void> recordOpen(ViewMode mode, String id) async {
+    await client.call(
+      'resources.recordOpen',
+      <String, dynamic>{'mode': mode.name, 'id': id},
+    );
+  }
+
+  @override
   Future<void> reveal(ViewMode mode, String id) async {
     await client.call(
       'resources.reveal',

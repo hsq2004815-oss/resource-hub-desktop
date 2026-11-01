@@ -14,6 +14,7 @@ from resource_hub_core.settings import (
     DEFAULT_HOTKEY_ID,
     DEFAULT_LANGUAGE,
     DEFAULT_QUICK_PANEL_HOTKEY_ID,
+    QUICK_PANEL_ORDERS,
     DELETE_MODES,
     Settings,
     SettingsStore,
@@ -199,23 +200,43 @@ class SettingsNormalizeTests(unittest.TestCase):
                 settings = Settings.normalize({"shellContextMenuEnabled": value})
                 self.assertTrue(settings.shell_context_menu_enabled)
 
-    def test_quick_panel_grouped_round_trip(self) -> None:
-        # Flat (the main window's order) is the default; grouping is opt-in.
-        self.assertFalse(Settings().quick_panel_grouped)
-        self.assertIs(Settings().to_json()["quickPanelGrouped"], False)
+    def test_quick_panel_order_round_trip(self) -> None:
+        # Manual (the main window's order) is the default.
+        self.assertEqual(Settings().quick_panel_order, "manual")
+        self.assertEqual(Settings().to_json()["quickPanelOrder"], "manual")
 
-        payload = Settings(quick_panel_grouped=True).to_json()
-        self.assertIs(payload["quickPanelGrouped"], True)
-        self.assertEqual(
-            Settings.normalize(payload),
-            Settings(quick_panel_grouped=True),
-        )
-
-        # Non-bool values fall back to the default instead of raising.
-        for value in (None, "yes", 0, 1, [], {}):
+        for value in QUICK_PANEL_ORDERS:
             with self.subTest(value=value):
-                settings = Settings.normalize({"quickPanelGrouped": value})
-                self.assertFalse(settings.quick_panel_grouped)
+                payload = Settings(quick_panel_order=value).to_json()
+                self.assertEqual(payload["quickPanelOrder"], value)
+                self.assertEqual(
+                    Settings.normalize(payload),
+                    Settings(quick_panel_order=value),
+                )
+
+        # Unknown values fall back to manual instead of raising.
+        for value in (None, "yes", 1, [], {}):
+            with self.subTest(value=value):
+                settings = Settings.normalize({"quickPanelOrder": value})
+                self.assertEqual(settings.quick_panel_order, "manual")
+
+    def test_legacy_grouped_switch_migrates(self) -> None:
+        # v1.3-v1.5 stored a boolean; it must not reset the user's choice.
+        self.assertEqual(
+            Settings.normalize({"quickPanelGrouped": True}).quick_panel_order,
+            "grouped",
+        )
+        self.assertEqual(
+            Settings.normalize({"quickPanelGrouped": False}).quick_panel_order,
+            "manual",
+        )
+        # The new key wins when both are present.
+        self.assertEqual(
+            Settings.normalize(
+                {"quickPanelOrder": "frequent", "quickPanelGrouped": True}
+            ).quick_panel_order,
+            "frequent",
+        )
 
     def test_non_bool_flags_are_ignored(self) -> None:
         settings = Settings.normalize(

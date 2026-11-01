@@ -16,6 +16,40 @@ from resource_hub_core.models import (
 )
 
 
+class UsageCounterTests(unittest.TestCase):
+    """Phase 33: the counters behind the quick panel's "frequent" order."""
+
+    def test_counters_round_trip(self) -> None:
+        site = Site.normalize(
+            {
+                "name": "A",
+                "url": "https://a.test",
+                "openCount": 7,
+                "lastOpenedAt": "2026-11-01T05:00:00+08:00",
+            }
+        )
+        self.assertEqual(site.open_count, 7)
+        self.assertEqual(site.last_opened_at, "2026-11-01T05:00:00+08:00")
+        payload = site.to_json()
+        self.assertEqual(payload["openCount"], 7)
+        self.assertEqual(payload["lastOpenedAt"], "2026-11-01T05:00:00+08:00")
+
+    def test_older_files_have_no_counters(self) -> None:
+        site = Site.normalize({"name": "A", "url": "https://a.test"})
+        self.assertEqual(site.open_count, 0)
+        self.assertEqual(site.last_opened_at, "")
+        # Nothing is written back for an unused row.
+        self.assertNotIn("openCount", site.to_json())
+
+    def test_junk_counters_fall_back_to_zero(self) -> None:
+        for value in (-3, "7", None, True, 1.5, []):
+            with self.subTest(value=value):
+                site = Site.normalize(
+                    {"name": "A", "url": "https://a.test", "openCount": value}
+                )
+                self.assertEqual(site.open_count, 0)
+
+
 class CategoryTests(unittest.TestCase):
     def test_blank_becomes_sentinel(self) -> None:
         for value in (None, "", "   "):

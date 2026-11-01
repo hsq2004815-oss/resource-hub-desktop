@@ -17,6 +17,7 @@ from resource_hub_core.bookmark_bridge import BookmarkBridge
 from resource_hub_core.bookmarks import BROWSER_DATA_DIRS_ENV
 from resource_hub_core.browsers import Browser
 from resource_hub_core.protocol import PROTOCOL_VERSION, JsonLinesServer
+from resource_hub_core.service import ServiceError
 
 
 def http_json(
@@ -275,6 +276,58 @@ class ResourceTests(ProtocolTestCase):
             frame = self.call("resources.open", {"mode": "links", "id": item_id})
         self.assertTrue(frame["ok"])
         opener.assert_called_once_with("https://a.test", None)
+
+    def test_opening_counts_towards_the_usage_ranking(self) -> None:
+        item_id = self.call(
+            "resources.add", {"mode": "links", "name": "A", "target": "https://a.test"}
+        )["result"]["item"]["id"]
+        with mock.patch("resource_hub_core.protocol.open_link"):
+            self.call("resources.open", {"mode": "links", "id": item_id})
+            self.call("resources.open", {"mode": "links", "id": item_id})
+        row = next(
+            item
+            for item in self.call("resources.list", {"mode": "links"})["result"][
+                "items"
+            ]
+            if item["id"] == item_id
+        )
+        self.assertEqual(row["openCount"], 2)
+        self.assertTrue(row["lastOpenedAt"])
+
+    def test_the_window_can_report_an_open_it_handled_itself(self) -> None:
+        # The runner hands URLs to the shell, so resources.open never runs.
+        item_id = self.call(
+            "resources.add", {"mode": "links", "name": "A", "target": "https://a.test"}
+        )["result"]["item"]["id"]
+        frame = self.call("resources.recordOpen", {"mode": "links", "id": item_id})
+        self.assertTrue(frame["ok"], frame)
+        row = next(
+            item
+            for item in self.call("resources.list", {"mode": "links"})["result"][
+                "items"
+            ]
+            if item["id"] == item_id
+        )
+        self.assertEqual(row["openCount"], 1)
+
+    def test_a_failed_open_is_not_counted(self) -> None:
+        item_id = self.call(
+            "resources.add", {"mode": "links", "name": "A", "target": "https://a.test"}
+        )["result"]["item"]["id"]
+        with mock.patch(
+            "resource_hub_core.protocol.open_link",
+            side_effect=ServiceError("open_failed", "nope"),
+        ):
+            frame = self.call("resources.open", {"mode": "links", "id": item_id})
+        self.assertFalse(frame["ok"])
+        row = next(
+            item
+            for item in self.call("resources.list", {"mode": "links"})["result"][
+                "items"
+            ]
+            if item["id"] == item_id
+        )
+        self.assertEqual(row.get("openCount", 0), 0)
 
     def test_open_link_uses_the_site_browser(self) -> None:
         item_id = self.call(

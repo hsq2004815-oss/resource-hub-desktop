@@ -1720,6 +1720,25 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _open(ResourceItem item) => _openResource(item, _mode);
 
+  /// Keeps the in-memory row in step with the counter the backend just wrote,
+  /// so the details panel shows the new number without a full reload.
+  void _bumpOpenCount(ViewMode mode, String id) {
+    void bump(List<ResourceItem> items) {
+      final int index = items.indexWhere((ResourceItem entry) => entry.id == id);
+      if (index < 0) {
+        return;
+      }
+      items[index] = items[index].copyWith(
+        openCount: items[index].openCount + 1,
+        lastOpenedAt: DateTime.now(),
+      );
+    }
+
+    setState(() {
+      bump(mode.isLinks ? _links : _folders);
+    });
+  }
+
   Future<void> _openResource(
     ResourceItem item,
     ViewMode mode, {
@@ -1739,10 +1758,15 @@ class _HomePageState extends State<HomePage> {
         // this window. Fall back to the backend when the native method is absent
         // (widget tests, non-Windows, or a rejected target).
         final bool handled = await NativeShell.openTarget(item.path);
-        if (!handled) {
+        if (handled) {
+          // The runner opened it, so the backend never saw it: report the open
+          // explicitly or the usage ranking stays blind to this row.
+          await _repo.recordOpen(mode, item.id);
+        } else {
           await _repo.open(mode, item.id);
         }
       }
+      _bumpOpenCount(mode, item.id);
       _setStatus(_Status(text: '${strings.t('open')}: ${item.name}'));
     } on BackendException catch (error) {
       _setStatus(_Status.fromError(error));
@@ -1981,20 +2005,20 @@ class _HomePageState extends State<HomePage> {
         onOpenPath: (String path) => unawaited(_openPathFromQuick(path)),
         onSwitchKind: _switchQuickKind,
         onClose: () => unawaited(_closeQuick()),
-        grouped: widget.settings.quickPanelGrouped,
-        onToggleGrouped: _toggleQuickGrouped,
+        order: widget.settings.quickPanelOrder,
+        onCycleOrder: _cycleQuickOrder,
         onReorder: (List<String> ids) => unawaited(_reorderQuick(ids)),
       ),
     );
   }
 
-  /// Flips the HUD between category groups and the flat stored order, and
-  /// persists the choice so the next hotkey press keeps it.
-  void _toggleQuickGrouped() {
+  /// Advances the HUD through manual -> grouped -> frequent, and persists the
+  /// choice so the next hotkey press keeps it.
+  void _cycleQuickOrder() {
     unawaited(
       widget.onSettingsChanged(
         widget.settings.copyWith(
-          quickPanelGrouped: !widget.settings.quickPanelGrouped,
+          quickPanelOrder: widget.settings.quickPanelOrder.next,
         ),
       ),
     );

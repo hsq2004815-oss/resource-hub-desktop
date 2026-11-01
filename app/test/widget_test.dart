@@ -17,6 +17,7 @@ import 'package:resource_hub/design/app_tokens.dart';
 import 'package:resource_hub/features/home/home_page.dart';
 import 'package:resource_hub/features/home/resource_detail_panel.dart';
 import 'package:resource_hub/features/home/resource_form.dart';
+import 'package:resource_hub/features/quick/quick_panel.dart';
 import 'package:resource_hub/l10n/strings_scope.dart';
 import 'package:resource_hub/models/resource_item.dart';
 import 'package:resource_hub/platform/backend_client.dart';
@@ -331,6 +332,13 @@ class FakeApi implements ResourceApi {
 
   @override
   Future<Map<String, String>> refreshFavicons() async => favicons;
+
+  int recordOpenCalls = 0;
+
+  @override
+  Future<void> recordOpen(ViewMode mode, String id) async {
+    recordOpenCalls += 1;
+  }
 
   @override
   Future<void> reveal(ViewMode mode, String id) async {
@@ -1634,7 +1642,7 @@ void main() {
     expect(find.text('项目主目录'), findsNothing);
   });
 
-  testWidgets('quick HUD sort button toggles flat and grouped and persists it',
+  testWidgets('quick HUD sort button cycles manual, grouped and frequent',
       (WidgetTester tester) async {
     final FakeApi api = FakeApi();
     AppSettings? saved;
@@ -1650,15 +1658,50 @@ void main() {
 
     await tester.tap(find.byTooltip('切换为按分类分组'));
     await tester.pumpAndSettle();
-
-    expect(saved?.quickPanelGrouped, isTrue);
+    expect(saved?.quickPanelOrder, QuickPanelOrder.grouped);
     expect(find.text('开发'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('切换为按常用排序'));
+    await tester.pumpAndSettle();
+    expect(saved?.quickPanelOrder, QuickPanelOrder.frequent);
+    // No headers in the usage ranking either.
+    expect(find.text('开发'), findsNothing);
 
     await tester.tap(find.byTooltip('切换为平铺（按主页顺序）'));
     await tester.pumpAndSettle();
+    expect(saved?.quickPanelOrder, QuickPanelOrder.manual);
+  });
 
-    expect(saved?.quickPanelGrouped, isFalse);
-    expect(find.text('开发'), findsNothing);
+  test('usage ranking prefers fresh rows and drops stale ones', () {
+    final DateTime now = DateTime(2026, 11, 1, 12);
+    ResourceItem make(
+      String id, {
+      int count = 0,
+      int? daysAgo,
+    }) =>
+        ResourceItem(
+          id: id,
+          name: id,
+          path: 'https://$id.test',
+          kind: ResourceKind.link,
+          openCount: count,
+          lastOpenedAt:
+              daysAgo == null ? null : now.subtract(Duration(days: daysAgo)),
+        );
+
+    final List<ResourceItem> ranked = orderByUsage(<ResourceItem>[
+      make('never'),
+      make('stale', count: 50, daysAgo: 200),
+      make('fresh', count: 3, daysAgo: 1),
+      make('warm', count: 5, daysAgo: 20),
+      make('hot', count: 4, daysAgo: 2),
+    ], now);
+
+    // 3 x 1.0 = 3, 4 x 1.0 = 4, 5 x 0.6 = 3 -> the tie keeps manual order.
+    expect(
+      ranked.map((ResourceItem item) => item.id).toList(),
+      <String>['hot', 'fresh', 'warm', 'never', 'stale'],
+    );
   });
 
   testWidgets('dragging in the quick HUD reorders the shared collection',
@@ -1699,6 +1742,28 @@ void main() {
       api.links.map((ResourceItem item) => item.id).toList(),
       <String>['l2', 'l1'],
     );
+  });
+
+  testWidgets('a native open still counts towards the usage ranking',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(
+      tester,
+      api: api,
+      // The runner hands URLs to the shell itself; only the count must come back.
+      shellHandler: (MethodCall call) async =>
+          call.method == 'openTarget' ? true : null,
+    );
+
+    await tester.tap(find.text('项目主目录'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('打开').first);
+    await tester.pumpAndSettle();
+
+    // The runner reported success, so the window counted it itself instead of
+    // asking the backend to open (and count) again.
+    expect(api.recordOpenCalls, 1);
+    expect(api.openCalls, 0);
   });
 
   testWidgets('quick HUD Tab switches between the two trees',

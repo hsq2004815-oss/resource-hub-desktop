@@ -35,6 +35,13 @@ def normalize_category(raw: Any) -> str:
     return category
 
 
+def _normalize_open_count(raw: Any) -> int:
+    """Older files have no usage counter; anything unusable counts as never."""
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return 0
+    return max(0, raw)
+
+
 @runtime_checkable
 class Resource(Protocol):
     """What the service needs from either dataset entry."""
@@ -65,6 +72,10 @@ class Site:
     #: Browser id used to open this site (``chrome`` / ``edge`` / …); empty means
     #: the system default browser. Imported bookmarks keep their origin.
     browser: str = ""
+    #: Phase 33: how often this row was opened and when, for the quick panel's
+    #: "frequent" order. Older files simply default to 0 / empty.
+    open_count: int = 0
+    last_opened_at: str = ""
 
     @property
     def target(self) -> str:
@@ -82,6 +93,10 @@ class Site:
         }
         if self.browser:
             payload["browser"] = self.browser
+        if self.open_count:
+            payload["openCount"] = self.open_count
+        if self.last_opened_at:
+            payload["lastOpenedAt"] = self.last_opened_at
         return payload
 
     @classmethod
@@ -95,6 +110,8 @@ class Site:
             favorite=bool(raw.get("favorite")),
             created_at=str(raw.get("createdAt") or now_iso()),
             browser=str(raw.get("browser") or "").strip().casefold(),
+            open_count=_normalize_open_count(raw.get("openCount")),
+            last_opened_at=str(raw.get("lastOpenedAt") or ""),
         )
 
     @staticmethod
@@ -113,6 +130,9 @@ class Folder:
     note: str = ""
     favorite: bool = False
     created_at: str = ""
+    #: Phase 33: same counters as :class:`Site`.
+    open_count: int = 0
+    last_opened_at: str = ""
 
     @property
     def target(self) -> str:
@@ -128,6 +148,16 @@ class Folder:
             "note": self.note,
             "favorite": self.favorite,
             "createdAt": self.created_at,
+            **(
+                {"openCount": self.open_count}
+                if self.open_count
+                else {}
+            ),
+            **(
+                {"lastOpenedAt": self.last_opened_at}
+                if self.last_opened_at
+                else {}
+            ),
         }
 
     @classmethod
@@ -151,6 +181,8 @@ class Folder:
             note=str(raw.get("note") or ""),
             favorite=bool(raw.get("favorite")),
             created_at=str(raw.get("createdAt") or now_iso()),
+            open_count=_normalize_open_count(raw.get("openCount")),
+            last_opened_at=str(raw.get("lastOpenedAt") or ""),
         )
 
     @staticmethod

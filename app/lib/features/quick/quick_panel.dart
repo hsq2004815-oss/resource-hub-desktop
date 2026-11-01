@@ -38,6 +38,54 @@ enum QuickPanelKind {
   bool get isLinks => this == QuickPanelKind.links;
 }
 
+/// Rows idle for longer than this drop below everything still in use.
+const int kUsageStaleDays = 90;
+
+/// Weight applied to the opening count, by how long ago the last open was.
+double usageWeight(int ageDays) {
+  if (ageDays <= 7) {
+    return 1;
+  }
+  if (ageDays <= 30) {
+    return 0.6;
+  }
+  return 0.3;
+}
+
+/// Ranks [items] by usage: count times a recency decay, highest first.
+///
+/// Rows never opened, or idle for more than [kUsageStaleDays], keep their
+/// manual order *below* everything still in use -- a site opened fifty times a
+/// year ago must not outrank one you used this morning.
+List<ResourceItem> orderByUsage(List<ResourceItem> items, DateTime now) {
+  final List<ResourceItem> active = <ResourceItem>[];
+  final List<ResourceItem> resting = <ResourceItem>[];
+  final Map<String, double> score = <String, double>{};
+  for (final ResourceItem item in items) {
+    final DateTime? last = item.lastOpenedAt;
+    if (item.openCount <= 0 || last == null) {
+      resting.add(item);
+      continue;
+    }
+    final int age = now.difference(last).inDays.clamp(0, 100000);
+    if (age > kUsageStaleDays) {
+      resting.add(item);
+      continue;
+    }
+    active.add(item);
+    score[item.id] = item.openCount * usageWeight(age);
+  }
+  // List.sort is not stable, so ties fall back to the manual position.
+  final Map<String, int> position = <String, int>{
+    for (int i = 0; i < active.length; i++) active[i].id: i,
+  };
+  active.sort((ResourceItem a, ResourceItem b) {
+    final int byScore = score[b.id]!.compareTo(score[a.id]!);
+    return byScore != 0 ? byScore : position[a.id]!.compareTo(position[b.id]!);
+  });
+  return <ResourceItem>[...active, ...resting];
+}
+
 /// A Spotlight-style tree overlay for one dataset.
 class QuickPanel extends StatefulWidget {
   const QuickPanel({
@@ -52,8 +100,8 @@ class QuickPanel extends StatefulWidget {
     required this.onOpenPath,
     required this.onSwitchKind,
     required this.onClose,
-    required this.grouped,
-    required this.onToggleGrouped,
+    required this.order,
+    required this.onCycleOrder,
     required this.onReorder,
   });
 
@@ -78,10 +126,13 @@ class QuickPanel extends StatefulWidget {
   final VoidCallback onSwitchKind;
   final VoidCallback onClose;
 
-  /// Group rows under category headers. False = flat list in the stored order,
-  /// which is exactly the main window's order, so a drag here reorders both.
-  final bool grouped;
-  final VoidCallback onToggleGrouped;
+  /// How rows are ordered. Manual is the main window's stored order (a drag
+  /// here reorders both); grouped adds category headers; frequent ranks by
+  /// usage.
+  final QuickPanelOrder order;
+
+  /// Advances [order] to its next mode and persists it.
+  final VoidCallback onCycleOrder;
 
   /// Called with the full id list after a drop; the shell persists it through
   /// resources.reorder (no undo feedback in the HUD).
@@ -218,8 +269,12 @@ class _QuickPanelState extends State<QuickPanel> {
       ];
     }
 
-    if (!widget.grouped) {
-      return _flatRows(items, isLinks, t);
+    if (widget.order != QuickPanelOrder.grouped) {
+      final List<ResourceItem> ordered =
+          widget.order == QuickPanelOrder.frequent
+              ? orderByUsage(items, DateTime.now())
+              : items;
+      return _flatRows(ordered, isLinks, t);
     }
 
     final Map<String, List<ResourceItem>> grouped =
@@ -645,7 +700,8 @@ class _QuickPanelState extends State<QuickPanel> {
     // Dragging only makes sense when every row is a resource sitting in the
     // stored order: with headers or an active filter the drop target has no
     // meaning, so the grip dims instead.
-    final bool reorderable = !widget.grouped && !hasSearch;
+    final bool reorderable =
+        widget.order == QuickPanelOrder.manual && !hasSearch;
 
     final Widget body;
     if (rows.isEmpty) {
@@ -824,14 +880,18 @@ class _QuickPanelState extends State<QuickPanel> {
           // Shows the mode a click switches to, not the current one: the rows
           // themselves already say whether headers are on.
           IconButton(
-            tooltip: widget.grouped
-                ? t.tx('quick_sort_to_flat')
-                : t.tx('quick_sort_to_grouped'),
-            onPressed: widget.onToggleGrouped,
+            tooltip: switch (widget.order.next) {
+              QuickPanelOrder.manual => t.tx('quick_sort_to_flat'),
+              QuickPanelOrder.grouped => t.tx('quick_sort_to_grouped'),
+              QuickPanelOrder.frequent => t.tx('quick_sort_to_frequent'),
+            },
+            onPressed: widget.onCycleOrder,
             icon: Icon(
-              widget.grouped
-                  ? Icons.view_list_outlined
-                  : Icons.category_outlined,
+              switch (widget.order.next) {
+                QuickPanelOrder.manual => Icons.view_list_outlined,
+                QuickPanelOrder.grouped => Icons.category_outlined,
+                QuickPanelOrder.frequent => Icons.trending_up,
+              },
               size: 16,
               color: scheme.onSurfaceVariant,
             ),

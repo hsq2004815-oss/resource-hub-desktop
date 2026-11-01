@@ -64,6 +64,8 @@ class ResourceItem {
     this.favorite = false,
     this.createdAt,
     this.browser = '',
+    this.openCount = 0,
+    this.lastOpenedAt,
     this.pathState = PathState.unknown,
   });
 
@@ -84,6 +86,11 @@ class ResourceItem {
   /// Browser id used to open this link (`chrome` / `edge` / …); empty means the
   /// system default. Imported bookmarks keep their origin browser.
   final String browser;
+
+  /// How often this row was opened, and when it last was (local time).
+  /// Both come from the backend's usage counters; older files have neither.
+  final int openCount;
+  final DateTime? lastOpenedAt;
 
   final PathState pathState;
 
@@ -109,6 +116,8 @@ class ResourceItem {
     bool? favorite,
     DateTime? createdAt,
     String? browser,
+    int? openCount,
+    DateTime? lastOpenedAt,
     PathState? pathState,
   }) {
     return ResourceItem(
@@ -121,6 +130,8 @@ class ResourceItem {
       favorite: favorite ?? this.favorite,
       createdAt: createdAt ?? this.createdAt,
       browser: browser ?? this.browser,
+      openCount: openCount ?? this.openCount,
+      lastOpenedAt: lastOpenedAt ?? this.lastOpenedAt,
       pathState: pathState ?? this.pathState,
     );
   }
@@ -147,6 +158,9 @@ class ResourceItem {
       favorite: json['favorite'] == true,
       createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? ''),
       browser: (json['browser'] as String?) ?? '',
+      openCount: (json['openCount'] as num?)?.toInt() ?? 0,
+      lastOpenedAt:
+          DateTime.tryParse((json['lastOpenedAt'] as String?) ?? ''),
     );
   }
 
