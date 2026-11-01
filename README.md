@@ -65,11 +65,11 @@ searchable list and one hotkey away.
 <tr>
 <td width="50%" align="center" valign="top">
   <img src="docs/images/quick-panel.png" width="300" alt="Quick panel"><br>
-  <sub><b>Quick panel</b> — the compact tree behind <code>Ctrl+Alt+Shift+L/F</code>.</sub>
+  <sub><b>Quick panel</b> — opened with <code>Alt + Space</code> or a mouse side button; press again to switch trees.</sub>
 </td>
 <td width="50%" align="center" valign="top">
   <img src="docs/images/settings.png" width="300" alt="Settings"><br>
-  <sub><b>Settings</b> — language, theme, hotkeys, bookmark sync, AI suggestions.</sub>
+  <sub><b>Settings</b> — language, theme, hotkeys, bookmark sync, AI tagging.</sub>
 </td>
 </tr>
 </table>

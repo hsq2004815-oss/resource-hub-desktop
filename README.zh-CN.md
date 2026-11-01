@@ -60,11 +60,11 @@
 <tr>
 <td width="50%" align="center" valign="top">
   <img src="docs/images/quick-panel.png" width="300" alt="快速面板"><br>
-  <sub><b>快速面板</b> —— <code>Ctrl+Alt+Shift+L/F</code> 呼出的紧凑树状列表。</sub>
+  <sub><b>快速面板</b> —— <code>Alt + Space</code> 或鼠标侧键呼出，再按一次切换网站 / 文件夹。</sub>
 </td>
 <td width="50%" align="center" valign="top">
   <img src="docs/images/settings.png" width="300" alt="设置"><br>
-  <sub><b>设置</b> —— 语言、主题、快捷键、书签同步、AI 分类建议。</sub>
+  <sub><b>设置</b> —— 语言、主题、快捷键、书签同步、AI 自动分类与备注。</sub>
 </td>
 </tr>
 </table>
