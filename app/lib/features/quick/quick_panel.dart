@@ -94,6 +94,8 @@ class QuickPanel extends StatefulWidget {
     required this.links,
     required this.folders,
     this.browsers = const <BrowserInfo>[],
+    this.openers = const <OpenerInfo>[],
+    this.onOpenPathWith,
     required this.loadChildren,
     required this.onOpenItem,
     this.onOpenWith,
@@ -120,6 +122,13 @@ class QuickPanel extends StatefulWidget {
 
   /// Installed browsers for the right-click "open with" menu.
   final List<BrowserInfo> browsers;
+
+  /// Preset programs for the right-click menu on folders and files.
+  final List<OpenerInfo> openers;
+
+  /// Right-click a folder/file row: open it once with the picked program
+  /// (empty id = system default). Null hides the menu.
+  final void Function(ResourceItem item, String openerId)? onOpenPathWith;
 
   /// Opens a raw filesystem entry (file) with the default handler.
   final ValueChanged<String> onOpenPath;
@@ -551,6 +560,59 @@ class _QuickPanelState extends State<QuickPanel> {
   }
 
   /// Right-click menu for a link row: open it once in the picked browser.
+  /// Right-click handler for one row: browsers for links, programs for paths.
+  void Function(TapDownDetails)? _rowMenuHandler(_QuickRow row, AppStrings t) {
+    final ResourceItem? item = row.item;
+    if (item == null) {
+      return null;
+    }
+    if (item.kind == ResourceKind.link && widget.onOpenWith != null) {
+      return (TapDownDetails details) =>
+          unawaited(_showOpenWithMenu(item, details.globalPosition, t));
+    }
+    if (item.kind != ResourceKind.link && widget.onOpenPathWith != null) {
+      return (TapDownDetails details) =>
+          unawaited(_showPathOpenWithMenu(item, details.globalPosition, t));
+    }
+    return null;
+  }
+
+  /// Phase 34: pick a program for this open only; the default lives in the
+  /// details panel.
+  Future<void> _showPathOpenWithMenu(
+    ResourceItem item,
+    Offset position,
+    AppStrings t,
+  ) async {
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final String? choice = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(1, 1),
+        Offset.zero & overlay.size,
+      ),
+      items: <PopupMenuEntry<String>>[
+        PopupMenuItem<String>(
+          value: '',
+          child: Text(t.tx('open_with_default_app')),
+        ),
+        for (final OpenerInfo opener in widget.openers)
+          if (opener.id != 'system')
+            PopupMenuItem<String>(
+              value: opener.id,
+              enabled: opener.available,
+              child: Text(
+                opener.available ? opener.name : '${opener.name} (未安装)',
+              ),
+            ),
+      ],
+    );
+    if (choice != null && mounted) {
+      widget.onOpenPathWith!(item, choice);
+    }
+  }
+
   Future<void> _showOpenWithMenu(
     ResourceItem item,
     Offset position,
@@ -1071,16 +1133,7 @@ class _QuickPanelState extends State<QuickPanel> {
             splashColor: Colors.transparent,
             splashFactory: NoSplash.splashFactory,
             onTap: () => _activateRow(row, t),
-            onSecondaryTapDown: row.item?.kind == ResourceKind.link &&
-                    widget.onOpenWith != null
-                ? (TapDownDetails details) => unawaited(
-                      _showOpenWithMenu(
-                        row.item!,
-                        details.globalPosition,
-                        t,
-                      ),
-                    )
-                : null,
+            onSecondaryTapDown: _rowMenuHandler(row, t),
             child: AnimatedContainer(
               duration: AppDurations.fast,
               constraints: const BoxConstraints(minHeight: 32),

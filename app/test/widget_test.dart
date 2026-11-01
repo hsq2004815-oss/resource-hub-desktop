@@ -245,6 +245,7 @@ class FakeApi implements ResourceApi {
     String? category,
     String? note,
     String? browser,
+    String? openWith,
   }) async {
     final List<ResourceItem> bucket = _bucket(mode);
     final int index = bucket.indexWhere((ResourceItem e) => e.id == id);
@@ -254,6 +255,7 @@ class FakeApi implements ResourceApi {
       category: category ?? kUncategorized,
       note: note ?? '',
       browser: browser ?? bucket[index].browser,
+      openWith: openWith ?? bucket[index].openWith,
     );
     bucket[index] = updated;
     return updated;
@@ -318,11 +320,29 @@ class FakeApi implements ResourceApi {
   }
 
   @override
-  Future<void> open(ViewMode mode, String id, {String? browser}) async {
+  Future<void> open(
+    ViewMode mode,
+    String id, {
+    String? browser,
+    String? opener,
+  }) async {
     openCalls += 1;
     lastOpenedId = id;
     lastOpenedBrowser = browser;
+    lastOpenedOpener = opener;
   }
+
+  String? lastOpenedOpener;
+
+  @override
+  Future<List<OpenerInfo>> listOpeners() async => openers;
+
+  /// Preset programs the fake machine "has installed".
+  List<OpenerInfo> openers = const <OpenerInfo>[
+    OpenerInfo(id: 'system', name: 'System default'),
+    OpenerInfo(id: 'vscode', name: 'Visual Studio Code'),
+    OpenerInfo(id: 'wt', name: 'Windows Terminal'),
+  ];
 
   @override
   Future<List<BrowserInfo>> listBrowsers() async => browsers;
@@ -1764,6 +1784,69 @@ void main() {
     // asking the backend to open (and count) again.
     expect(api.recordOpenCalls, 1);
     expect(api.openCalls, 0);
+  });
+
+  testWidgets('right-clicking a folder in the HUD offers the preset programs',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    api.emitHotkey('quick');
+    await tester.pumpAndSettle();
+    api.emitHotkey('quick');
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.text('项目主目录'),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('系统默认程序'), findsOneWidget);
+    await tester.tap(find.text('Visual Studio Code'));
+    await tester.pumpAndSettle();
+
+    expect(api.openCalls, 1);
+    expect(api.lastOpenedOpener, 'vscode');
+  });
+
+  testWidgets('the list context menu opens a folder with a chosen program',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    await tester.tap(
+      find.text('项目主目录'),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('打开方式'), findsOneWidget);
+
+    await tester.tap(find.text('打开方式'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Visual Studio Code'));
+    await tester.pumpAndSettle();
+
+    expect(api.openCalls, 1);
+    expect(api.lastOpenedOpener, 'vscode');
+  });
+
+  testWidgets('the details panel saves a default program for a folder',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    await tester.tap(find.text('项目主目录'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey<String>('path-opener-dropdown')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Visual Studio Code').last);
+    await tester.pumpAndSettle();
+
+    final ResourceItem saved = api.folders
+        .firstWhere((ResourceItem item) => item.id == 'f1');
+    expect(saved.openWith, 'vscode');
   });
 
   testWidgets('quick HUD Tab switches between the two trees',

@@ -86,6 +86,7 @@ class BackendRepository implements ResourceApi {
     String? category,
     String? note,
     String? browser,
+    String? openWith,
   }) async {
     final Map<String, dynamic> result = await client.call(
       'resources.update',
@@ -97,6 +98,7 @@ class BackendRepository implements ResourceApi {
         'category': ?category,
         'note': note ?? '',
         'browser': ?browser,
+        'openWith': ?openWith,
       },
     );
     return ResourceItem.fromJson(result['item'] as Map<String, dynamic>);
@@ -144,15 +146,29 @@ class BackendRepository implements ResourceApi {
   }
 
   @override
-  Future<void> open(ViewMode mode, String id, {String? browser}) async {
+  Future<void> open(
+    ViewMode mode,
+    String id, {
+    String? browser,
+    String? opener,
+  }) async {
     await client.call(
       'resources.open',
       <String, dynamic>{
         'mode': mode.name,
         'id': id,
         'browser': ?browser,
+        'opener': ?opener,
       },
     );
+  }
+
+  @override
+  Future<List<OpenerInfo>> listOpeners() async {
+    final Map<String, dynamic> result = await client.call('openers.list');
+    return (result['openers'] as List<dynamic>? ?? <dynamic>[])
+        .map((dynamic e) => OpenerInfo.fromJson(e as Map<String, dynamic>))
+        .toList(growable: false);
   }
 
   @override

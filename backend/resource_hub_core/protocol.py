@@ -53,6 +53,7 @@ from .fs import FsError, list_children, open_fs_path, reveal_fs_path
 from .hotkey import GlobalHotkeyListener, is_combination_available
 from .launcher import open_link, open_path, reveal_path
 from .mousehook import MouseSideButtonListener
+from .openers import installed_openers
 from .models import ALL_CATEGORIES, UNCATEGORIZED, Resource
 from .service import (
     DuplicateError,
@@ -218,6 +219,7 @@ class Dispatcher:
             "bookmarks.status": self._bookmarks_status,
             "bookmarks.sync": self._bookmarks_sync,
             "browsers.list": self._browsers_list,
+            "openers.list": self._openers_list,
             "favicons.map": self._favicons_map,
             "favicons.refresh": self._favicons_refresh,
             "bookmarks.extensionStatus": self._bookmarks_extension_status,
@@ -1087,6 +1089,11 @@ class Dispatcher:
                 if isinstance(params.get("browser"), str)
                 else None
             ),
+            open_with=(
+                params.get("openWith")
+                if isinstance(params.get("openWith"), str)
+                else None
+            ),
         )
         return {"item": item.to_json()}
 
@@ -1156,6 +1163,10 @@ class Dispatcher:
             "missingCount": result.missing_count,
         }
 
+    def _openers_list(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        """Preset programs that can open a folder or a file (Phase 34)."""
+        return {"openers": [opener.to_json() for opener in installed_openers()]}
+
     def _open(self, params: Mapping[str, Any]) -> dict[str, Any]:
         self._require_loaded()
         mode = self._require_mode(params)
@@ -1172,7 +1183,13 @@ class Dispatcher:
                 find_browser(browser_id) if browser_id else None,
             )
         else:
-            open_path(item.target)
+            requested_opener = params.get("opener")
+            opener_id = (
+                requested_opener.strip()
+                if isinstance(requested_opener, str) and requested_opener.strip()
+                else getattr(item, "open_with", "")
+            )
+            open_path(item.target, opener_id)
         # Counted only once the shell accepted it, so a failed open does not
         # inflate the quick panel's "frequent" ranking.
         self.state.service.record_open(mode, item.id)

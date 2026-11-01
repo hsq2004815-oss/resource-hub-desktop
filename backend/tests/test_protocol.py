@@ -329,6 +329,51 @@ class ResourceTests(ProtocolTestCase):
         )
         self.assertEqual(row.get("openCount", 0), 0)
 
+    def test_openers_are_listed(self) -> None:
+        frame = self.call("openers.list")
+        self.assertTrue(frame["ok"], frame)
+        ids = [opener["id"] for opener in frame["result"]["openers"]]
+        self.assertEqual(ids, ["system", "vscode", "wt", "powershell", "cmd"])
+        # The response never exposes an executable path.
+        for opener in frame["result"]["openers"]:
+            self.assertNotIn("command", opener)
+
+    def test_open_folder_honours_the_requested_opener(self) -> None:
+        target = self.dir / "proj"
+        target.mkdir()
+        item_id = self.call(
+            "resources.add",
+            {"mode": "folders", "name": "p", "target": str(target)},
+        )["result"]["item"]["id"]
+        with mock.patch("resource_hub_core.protocol.open_path") as opener:
+            frame = self.call(
+                "resources.open",
+                {"mode": "folders", "id": item_id, "opener": "vscode"},
+            )
+        self.assertTrue(frame["ok"], frame)
+        opener.assert_called_once_with(str(target), "vscode")
+
+    def test_open_folder_uses_the_saved_opener(self) -> None:
+        target = self.dir / "proj"
+        target.mkdir()
+        item_id = self.call(
+            "resources.add",
+            {"mode": "folders", "name": "p", "target": str(target)},
+        )["result"]["item"]["id"]
+        self.call(
+            "resources.update",
+            {
+                "mode": "folders",
+                "id": item_id,
+                "name": "p",
+                "target": str(target),
+                "openWith": "wt",
+            },
+        )
+        with mock.patch("resource_hub_core.protocol.open_path") as opener:
+            self.call("resources.open", {"mode": "folders", "id": item_id})
+        opener.assert_called_once_with(str(target), "wt")
+
     def test_open_link_uses_the_site_browser(self) -> None:
         item_id = self.call(
             "resources.add",

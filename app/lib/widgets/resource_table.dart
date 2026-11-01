@@ -9,8 +9,10 @@ library;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../data/backend_models.dart';
 import '../design/app_theme.dart';
 import '../design/app_tokens.dart';
+import '../l10n/app_strings_ext.dart';
 import '../l10n/strings_scope.dart';
 import '../models/resource_item.dart';
 import '../util/formatters.dart';
@@ -34,6 +36,8 @@ class ResourceTableActions {
     this.onToggleFavorite,
     this.onCopyPath,
     this.onDelete,
+    this.openers = const <OpenerInfo>[],
+    this.onOpenWith,
   });
 
   final ValueChanged<ResourceItem>? onOpen;
@@ -42,6 +46,10 @@ class ResourceTableActions {
   final ValueChanged<ResourceItem>? onToggleFavorite;
   final ValueChanged<ResourceItem>? onCopyPath;
   final ValueChanged<ResourceItem>? onDelete;
+
+  /// Phase 34: preset programs offered for folders and files.
+  final List<OpenerInfo> openers;
+  final void Function(ResourceItem item, String openerId)? onOpenWith;
 }
 
 /// Right-click menu shared by the list table and the grid cards.
@@ -74,6 +82,13 @@ Future<void> showResourceContextMenu(
         PopupMenuItem<String>(
           value: 'open',
           child: _MenuRow(icon: Icons.open_in_new, label: t.t('open')),
+        ),
+      if (!mode.isLinks &&
+          actions.onOpenWith != null &&
+          actions.openers.isNotEmpty)
+        PopupMenuItem<String>(
+          value: 'open_with',
+          child: _MenuRow(icon: Icons.apps, label: t.tx('open_with')),
         ),
       if (actions.onReveal != null && !mode.isLinks)
         PopupMenuItem<String>(
@@ -128,6 +143,40 @@ Future<void> showResourceContextMenu(
       actions.onCopyPath?.call(item);
     case 'delete':
       actions.onDelete?.call(item);
+    case 'open_with':
+      if (context.mounted) {
+        await _pickOpener(context, item, actions, position);
+      }
+  }
+}
+
+/// Second step of "open with": the program list (Phase 34).
+Future<void> _pickOpener(
+  BuildContext context,
+  ResourceItem item,
+  ResourceTableActions actions,
+  RelativeRect position,
+) async {
+  final AppStrings t = context.l10n;
+  final String? opener = await showMenu<String>(
+    context: context,
+    position: position,
+    items: <PopupMenuEntry<String>>[
+      PopupMenuItem<String>(
+        value: '',
+        child: Text(t.tx('open_with_default_app')),
+      ),
+      for (final OpenerInfo entry in actions.openers)
+        if (entry.id != 'system')
+          PopupMenuItem<String>(
+            value: entry.id,
+            enabled: entry.available,
+            child: Text(entry.available ? entry.name : '${entry.name} (未安装)'),
+          ),
+    ],
+  );
+  if (opener != null) {
+    actions.onOpenWith?.call(item, opener);
   }
 }
 

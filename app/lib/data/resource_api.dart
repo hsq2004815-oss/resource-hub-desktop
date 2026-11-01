@@ -39,6 +39,7 @@ abstract interface class ResourceApi {
     String? category,
     String? note,
     String? browser,
+    String? openWith,
   });
 
   Future<DeleteOutcome> delete(
@@ -59,7 +60,15 @@ abstract interface class ResourceApi {
 
   /// Opens a resource. Links use their stored browser unless [browser]
   /// overrides it (empty string = system default browser).
-  Future<void> open(ViewMode mode, String id, {String? browser});
+  Future<void> open(
+    ViewMode mode,
+    String id, {
+    String? browser,
+    String? opener,
+  });
+
+  /// Preset programs that can open a folder or a file (Phase 34).
+  Future<List<OpenerInfo>> listOpeners();
 
   /// Counts an open the native shell performed, so the usage ranking sees it.
   Future<void> recordOpen(ViewMode mode, String id);

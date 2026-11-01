@@ -133,6 +133,8 @@ class Folder:
     #: Phase 33: same counters as :class:`Site`.
     open_count: int = 0
     last_opened_at: str = ""
+    #: Phase 34: which preset program opens this path (empty = system default).
+    open_with: str = ""
 
     @property
     def target(self) -> str:
@@ -158,6 +160,7 @@ class Folder:
                 if self.last_opened_at
                 else {}
             ),
+            **({"openWith": self.open_with} if self.open_with else {}),
         }
 
     @classmethod
@@ -183,6 +186,7 @@ class Folder:
             created_at=str(raw.get("createdAt") or now_iso()),
             open_count=_normalize_open_count(raw.get("openCount")),
             last_opened_at=str(raw.get("lastOpenedAt") or ""),
+            open_with=str(raw.get("openWith") or "").strip().casefold(),
         )
 
     @staticmethod

@@ -28,6 +28,8 @@ class ResourceDetailPanel extends StatefulWidget {
     required this.item,
     this.browsers = const <BrowserInfo>[],
     this.onChangeBrowser,
+    this.openers = const <OpenerInfo>[],
+    this.onChangeOpener,
     required this.loadChildren,
     required this.onClose,
     required this.onResize,
@@ -43,6 +45,10 @@ class ResourceDetailPanel extends StatefulWidget {
 
   final ResourceItem item;
   final List<BrowserInfo> browsers;
+
+  /// Phase 34: preset programs for folders and files.
+  final List<OpenerInfo> openers;
+  final ValueChanged<String>? onChangeOpener;
 
   /// Persists the per-link "open with" browser; ``null`` hides the dropdown.
   final ValueChanged<String>? onChangeBrowser;
@@ -150,7 +156,10 @@ class _ResourceDetailPanelState extends State<ResourceDetailPanel> {
                       _buildHeader(context),
                       _buildPathRow(context),
                       _buildActionsRow(context),
-                      if (!_isFolder) _buildBrowserRow(context),
+                      if (widget.item.kind == ResourceKind.link)
+                        _buildBrowserRow(context),
+                      if (widget.item.kind != ResourceKind.link)
+                        _buildOpenerRow(context),
                       if (_isFolder) _buildZoomBar(context),
                       const Divider(height: 1),
                       Expanded(
@@ -356,6 +365,72 @@ class _ResourceDetailPanelState extends State<ResourceDetailPanel> {
                   : (String? next) {
                       if (next != null) {
                         widget.onChangeBrowser!(next);
+                      }
+                    },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Per-folder/file program; empty means the system default (Phase 34).
+  Widget _buildOpenerRow(BuildContext context) {
+    final AppStrings t = context.l10n;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextTheme text = Theme.of(context).textTheme;
+    final String value = widget.item.openWith;
+    final bool known = value.isEmpty ||
+        widget.openers.any((OpenerInfo opener) => opener.id == value);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        0,
+        AppSpacing.sm,
+        AppSpacing.xs,
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(Icons.open_in_new, size: 13, color: scheme.onSurfaceVariant),
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            '${t.tx('open_with')} ',
+            style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          Expanded(
+            child: DropdownButton<String>(
+              key: const ValueKey<String>('path-opener-dropdown'),
+              value: value,
+              isDense: true,
+              isExpanded: true,
+              underline: const SizedBox.shrink(),
+              style: text.bodySmall,
+              items: <DropdownMenuItem<String>>[
+                DropdownMenuItem<String>(
+                  value: '',
+                  child: Text(
+                    t.tx('open_with_default_app'),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                for (final OpenerInfo opener in widget.openers)
+                  if (opener.id != 'system')
+                    DropdownMenuItem<String>(
+                      value: opener.id,
+                      enabled: opener.available,
+                      child: Text(opener.name, overflow: TextOverflow.ellipsis),
+                    ),
+                if (!known)
+                  DropdownMenuItem<String>(
+                    value: value,
+                    child: Text(value, overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              onChanged: widget.onChangeOpener == null
+                  ? null
+                  : (String? next) {
+                      if (next != null) {
+                        widget.onChangeOpener!(next);
                       }
                     },
             ),

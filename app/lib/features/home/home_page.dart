@@ -133,6 +133,7 @@ class _HomePageState extends State<HomePage> {
   StreamSubscription<List<String>>? _dropSubscription;
   HotkeyStatus? _hotkey;
   List<BrowserInfo> _browsers = const <BrowserInfo>[];
+  List<OpenerInfo> _openers = const <OpenerInfo>[];
 
   List<ResourceItem> _links = <ResourceItem>[];
   List<ResourceItem> _folders = <ResourceItem>[];
@@ -204,7 +205,20 @@ class _HomePageState extends State<HomePage> {
     _dropSubscription = NativeShell.drops.listen(_handleDropPaths);
     _reloadAll();
     unawaited(_loadBrowsers());
+    unawaited(_loadOpeners());
     unawaited(_loadFavicons());
+  }
+
+  /// Preset programs for the per-folder "open with" choices (Phase 34).
+  Future<void> _loadOpeners() async {
+    try {
+      final List<OpenerInfo> openers = await widget.api.listOpeners();
+      if (mounted) {
+        setState(() => _openers = openers);
+      }
+    } catch (_) {
+      // Optional feature; the menu then offers the system default only.
+    }
   }
 
   /// Installed browsers power the per-site "open with" choices; the list stays
@@ -694,14 +708,18 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<void> _openFromQuick(ResourceItem item, {String? browser}) async {
+  Future<void> _openFromQuick(
+    ResourceItem item, {
+    String? browser,
+    String? opener,
+  }) async {
     final ViewMode mode =
         _quickKind.isLinks ? ViewMode.links : ViewMode.folders;
     await _closeQuick();
     if (!mounted) {
       return;
     }
-    await _openResource(item, mode, browser: browser);
+    await _openResource(item, mode, browser: browser, opener: opener);
   }
 
   Future<void> _openPathFromQuick(String path) async {
@@ -1743,6 +1761,7 @@ class _HomePageState extends State<HomePage> {
     ResourceItem item,
     ViewMode mode, {
     String? browser,
+    String? opener,
   }) async {
     final AppStrings strings = context.l10n;
     try {
@@ -1750,8 +1769,18 @@ class _HomePageState extends State<HomePage> {
       // hand-off to the shell only knows the system default browser.
       final bool explicitBrowser =
           mode.isLinks && (browser != null || item.browser.isNotEmpty);
-      if (explicitBrowser) {
-        await _repo.open(mode, item.id, browser: browser);
+      // A chosen program (even the saved default) must go through the backend,
+      // which knows how to start it; the native shell only opens the default.
+      final String? requestedOpener = opener ??
+          (item.openWith.isEmpty ? null : item.openWith);
+      final bool explicitOpener = !mode.isLinks && requestedOpener != null;
+      if (explicitBrowser || explicitOpener) {
+        await _repo.open(
+          mode,
+          item.id,
+          browser: explicitBrowser ? browser : null,
+          opener: explicitOpener ? requestedOpener : null,
+        );
       } else {
         // The runner owns the foreground window, so it can hand foreground
         // rights to Explorer / the browser; without that they can open behind
@@ -1770,6 +1799,10 @@ class _HomePageState extends State<HomePage> {
       _setStatus(_Status(text: '${strings.t('open')}: ${item.name}'));
     } on BackendException catch (error) {
       _setStatus(_Status.fromError(error));
+    } catch (error) {
+      // A dead backend throws a StateError, which used to escape as an
+      // unhandled exception: the click looked like it did nothing at all.
+      _setStatus(_Status(text: '$error', tone: StatusTone.error));
     }
   }
 
@@ -1786,6 +1819,28 @@ class _HomePageState extends State<HomePage> {
         browser: browserId,
       );
       await _reload(ViewMode.links);
+      if (!mounted) {
+        return;
+      }
+      setState(() => _selectedId = updated.id);
+    } on BackendException catch (error) {
+      _setStatus(_Status.fromError(error));
+    }
+  }
+
+  /// Saves the per-path default program (empty = system default).
+  Future<void> _setPathOpener(ResourceItem item, String openerId) async {
+    try {
+      final ResourceItem updated = await _repo.update(
+        ViewMode.folders,
+        id: item.id,
+        name: item.name,
+        target: item.path,
+        category: item.category,
+        note: item.note,
+        openWith: openerId,
+      );
+      await _reload(ViewMode.folders);
       if (!mounted) {
         return;
       }
@@ -1998,10 +2053,13 @@ class _HomePageState extends State<HomePage> {
         links: _links,
         folders: _folders,
         browsers: _browsers,
+        openers: _openers,
         loadChildren: _repo.listChildren,
         onOpenItem: (ResourceItem item) => unawaited(_openFromQuick(item)),
         onOpenWith: (ResourceItem item, String browserId) =>
             unawaited(_openFromQuick(item, browser: browserId)),
+        onOpenPathWith: (ResourceItem item, String openerId) =>
+            unawaited(_openFromQuick(item, opener: openerId)),
         onOpenPath: (String path) => unawaited(_openPathFromQuick(path)),
         onSwitchKind: _switchQuickKind,
         onClose: () => unawaited(_closeQuick()),
@@ -2090,6 +2148,11 @@ class _HomePageState extends State<HomePage> {
                                       unawaited(
                                     _setLinkBrowser(detailItem, browserId),
                                   ),
+                                  openers: _openers,
+                                  onChangeOpener: (String openerId) =>
+                                      unawaited(
+                                    _setPathOpener(detailItem, openerId),
+                                  ),
                                   loadChildren: _repo.listChildren,
                                   onClose: _closeDetail,
                                   onResize: (double dx) => setState(() {
@@ -2161,6 +2224,9 @@ class _HomePageState extends State<HomePage> {
                         setState(() => _selectedId = item.id);
                         _handleDelete();
                       },
+                      openers: _openers,
+                      onOpenWith: (ResourceItem item, String openerId) =>
+                        unawaited(_openResource(item, _mode, opener: openerId)),
                     ),
                     reorderEnabled: _canReorder,
                     onMoveItem: (ResourceItem item, int targetIndex) =>

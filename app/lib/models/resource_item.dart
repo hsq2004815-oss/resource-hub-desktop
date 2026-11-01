@@ -66,6 +66,7 @@ class ResourceItem {
     this.browser = '',
     this.openCount = 0,
     this.lastOpenedAt,
+    this.openWith = '',
     this.pathState = PathState.unknown,
   });
 
@@ -91,6 +92,9 @@ class ResourceItem {
   /// Both come from the backend's usage counters; older files have neither.
   final int openCount;
   final DateTime? lastOpenedAt;
+
+  /// Preset program used to open this path (Phase 34); empty = system default.
+  final String openWith;
 
   final PathState pathState;
 
@@ -118,6 +122,7 @@ class ResourceItem {
     String? browser,
     int? openCount,
     DateTime? lastOpenedAt,
+    String? openWith,
     PathState? pathState,
   }) {
     return ResourceItem(
@@ -132,6 +137,7 @@ class ResourceItem {
       browser: browser ?? this.browser,
       openCount: openCount ?? this.openCount,
       lastOpenedAt: lastOpenedAt ?? this.lastOpenedAt,
+      openWith: openWith ?? this.openWith,
       pathState: pathState ?? this.pathState,
     );
   }
@@ -161,6 +167,7 @@ class ResourceItem {
       openCount: (json['openCount'] as num?)?.toInt() ?? 0,
       lastOpenedAt:
           DateTime.tryParse((json['lastOpenedAt'] as String?) ?? ''),
+      openWith: (json['openWith'] as String?) ?? '',
     );
   }
 

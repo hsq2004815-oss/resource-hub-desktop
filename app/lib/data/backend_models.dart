@@ -148,6 +148,28 @@ const String kBookmarkDeleteRemove = 'remove';
 const String kBookmarkDeleteKeep = 'keep';
 
 /// Settings as stored by the backend (`settings.json`).
+/// Phase 34: a preset program that can open a folder or a file.
+class OpenerInfo {
+  const OpenerInfo({
+    required this.id,
+    required this.name,
+    this.available = true,
+  });
+
+  /// `system`, `vscode`, `wt`, `powershell`, `cmd`.
+  final String id;
+  final String name;
+
+  /// False when the program is not installed on this machine.
+  final bool available;
+
+  factory OpenerInfo.fromJson(Map<String, dynamic> json) => OpenerInfo(
+        id: (json['id'] as String?) ?? '',
+        name: (json['name'] as String?) ?? '',
+        available: json['available'] != false,
+      );
+}
+
 /// Phase 33: how the quick panel orders its rows.
 enum QuickPanelOrder {
   /// Flat, in the stored order (dragging in the HUD reorders both windows).

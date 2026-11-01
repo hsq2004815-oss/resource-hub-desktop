@@ -395,6 +395,7 @@ class ResourceService:
         category: str | None = None,
         note: str = "",
         browser: str | None = None,
+        open_with: str | None = None,
     ) -> Resource:
         """Replace an entry in place, preserving ``id``, ``createdAt`` and ``favorite``."""
         self._require_loaded()
@@ -422,6 +423,11 @@ class ResourceService:
             # Usage counters survive an edit; only opening them changes them.
             open_count=getattr(existing, "open_count", 0),
             last_opened_at=getattr(existing, "last_opened_at", ""),
+            open_with=(
+                getattr(existing, "open_with", "")
+                if open_with is None
+                else str(open_with).strip().casefold()
+            ),
         )
         index = self._items[mode].index(existing)
         self._items[mode][index] = updated
@@ -648,6 +654,7 @@ class ResourceService:
         favorite: bool = False,
         open_count: int = 0,
         last_opened_at: str = "",
+        open_with: str = "",
     ) -> Resource:
         common = {
             "id": item_id or str(uuid.uuid4()),
@@ -665,7 +672,7 @@ class ResourceService:
                 browser=str(browser or "").strip().casefold(),
                 **common,
             )
-        return Folder(path=target, kind=kind, **common)
+        return Folder(path=target, kind=kind, open_with=open_with, **common)
 
     def replace_all(self, mode: str, items: Iterable[Resource]) -> None:
         """Swap a collection wholesale (used by tests and future undo support)."""
