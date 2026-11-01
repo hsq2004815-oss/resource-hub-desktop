@@ -27,6 +27,7 @@ import '../../l10n/app_strings_ext.dart';
 import '../../l10n/strings_scope.dart';
 import '../../models/resource_item.dart';
 import '../../platform/backend_client.dart';
+import '../../widgets/reorder_grip.dart';
 import '../../widgets/site_icon.dart';
 
 /// Which tree the quick panel is showing.
@@ -51,6 +52,9 @@ class QuickPanel extends StatefulWidget {
     required this.onOpenPath,
     required this.onSwitchKind,
     required this.onClose,
+    required this.grouped,
+    required this.onToggleGrouped,
+    required this.onReorder,
   });
 
   final QuickPanelKind kind;
@@ -73,6 +77,15 @@ class QuickPanel extends StatefulWidget {
   final ValueChanged<String> onOpenPath;
   final VoidCallback onSwitchKind;
   final VoidCallback onClose;
+
+  /// Group rows under category headers. False = flat list in the stored order,
+  /// which is exactly the main window's order, so a drag here reorders both.
+  final bool grouped;
+  final VoidCallback onToggleGrouped;
+
+  /// Called with the full id list after a drop; the shell persists it through
+  /// resources.reorder (no undo feedback in the HUD).
+  final ValueChanged<List<String>> onReorder;
 
   @override
   State<QuickPanel> createState() => _QuickPanelState();
@@ -205,6 +218,10 @@ class _QuickPanelState extends State<QuickPanel> {
       ];
     }
 
+    if (!widget.grouped) {
+      return _flatRows(items, isLinks, t);
+    }
+
     final Map<String, List<ResourceItem>> grouped =
         <String, List<ResourceItem>>{};
     for (final ResourceItem item in items) {
@@ -249,6 +266,36 @@ class _QuickPanelState extends State<QuickPanel> {
         if (expandable && expanded) {
           _appendChildren(rows, item.path, 2, t);
         }
+      }
+    }
+    return rows;
+  }
+
+  /// Flat rows in the stored order — the same order the main window shows, so a
+  /// drag in this mode reorders both. Keys match the grouped rows (`i:<id>`) so
+  /// the selection survives a mode toggle.
+  List<_QuickRow> _flatRows(
+    List<ResourceItem> items,
+    bool isLinks,
+    AppStrings t,
+  ) {
+    final List<_QuickRow> rows = <_QuickRow>[];
+    for (final ResourceItem item in items) {
+      final String rowKey = 'i:${item.id}';
+      final bool expandable = !isLinks && item.kind == ResourceKind.folder;
+      final bool expanded = _expanded.contains(rowKey);
+      rows.add(
+        _QuickRow.resource(
+          key: rowKey,
+          item: item,
+          depth: 0,
+          expandable: expandable,
+          expanded: expanded,
+          subtitle: isLinks ? null : item.path,
+        ),
+      );
+      if (expandable && expanded) {
+        _appendChildren(rows, item.path, 1, t);
       }
     }
     return rows;
@@ -566,6 +613,26 @@ class _QuickPanelState extends State<QuickPanel> {
     }
   }
 
+  /// Turns a row move into the full id list for `resources.reorder`.
+  ///
+  /// Only resource rows carry a drag listener, so the new order is those rows
+  /// as they now sit; headers, notes and expanded children are re-derived from
+  /// [_expanded] on the next build.
+  void _reorder(int oldIndex, int newIndex) {
+    final List<_QuickRow> rows = _rows(context.l10n);
+    if (oldIndex < 0 || oldIndex >= rows.length) {
+      return;
+    }
+    final List<_QuickRow> next = List<_QuickRow>.of(rows);
+    final _QuickRow moved = next.removeAt(oldIndex);
+    // onReorderItem already shifted newIndex for the removal.
+    next.insert(newIndex.clamp(0, next.length), moved);
+    widget.onReorder(<String>[
+      for (final _QuickRow row in next)
+        if (row.item != null) row.item!.id,
+    ]);
+  }
+
   // -- build --------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
@@ -575,10 +642,35 @@ class _QuickPanelState extends State<QuickPanel> {
     final List<_QuickRow> rows = _rows(t);
     final String? selectedKey = _effectiveSelection(rows);
     final bool hasSearch = _query.trim().isNotEmpty;
+    // Dragging only makes sense when every row is a resource sitting in the
+    // stored order: with headers or an active filter the drop target has no
+    // meaning, so the grip dims instead.
+    final bool reorderable = !widget.grouped && !hasSearch;
 
     final Widget body;
     if (rows.isEmpty) {
       body = _emptyState(context, t, scheme, text, hasSearch);
+    } else if (reorderable) {
+      body = ReorderableListView.builder(
+        scrollController: _scroll,
+        padding: const EdgeInsets.fromLTRB(6, 2, 6, 8),
+        buildDefaultDragHandles: false,
+        itemCount: rows.length,
+        onReorderItem: _reorder,
+        itemBuilder: (BuildContext context, int index) => KeyedSubtree(
+          key: ValueKey<String>(rows[index].key),
+          child: _buildRow(
+            context,
+            rows[index],
+            index,
+            reorderable,
+            selectedKey,
+            scheme,
+            text,
+            t,
+          ),
+        ),
+      );
     } else {
       body = ListView.builder(
         controller: _scroll,
@@ -589,6 +681,8 @@ class _QuickPanelState extends State<QuickPanel> {
           return _buildRow(
             context,
             row,
+            index,
+            reorderable,
             selectedKey,
             scheme,
             text,
@@ -727,6 +821,24 @@ class _QuickPanelState extends State<QuickPanel> {
               textAlign: TextAlign.right,
             ),
           ),
+          // Shows the mode a click switches to, not the current one: the rows
+          // themselves already say whether headers are on.
+          IconButton(
+            tooltip: widget.grouped
+                ? t.tx('quick_sort_to_flat')
+                : t.tx('quick_sort_to_grouped'),
+            onPressed: widget.onToggleGrouped,
+            icon: Icon(
+              widget.grouped
+                  ? Icons.view_list_outlined
+                  : Icons.category_outlined,
+              size: 16,
+              color: scheme.onSurfaceVariant,
+            ),
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+          ),
         ],
       ),
     );
@@ -769,6 +881,8 @@ class _QuickPanelState extends State<QuickPanel> {
   Widget _buildRow(
     BuildContext context,
     _QuickRow row,
+    int index,
+    bool reorderable,
     String? selectedKey,
     ColorScheme scheme,
     TextTheme text,
@@ -865,6 +979,11 @@ class _QuickPanelState extends State<QuickPanel> {
     final Color favoriteColor =
         dark ? AppColors.favoriteDark : AppColors.favoriteLight;
     final bool warn = row.item?.pathState.isMissing ?? false;
+    final bool canDrag = reorderable && row.item != null;
+    // Grouped mode keeps a dimmed grip so the reason is discoverable; an active
+    // search hides it entirely (the HUD is a result list then, not an editor).
+    final bool showGroupedGrip =
+        !reorderable && row.item != null && _query.trim().isEmpty;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -1001,6 +1120,22 @@ class _QuickPanelState extends State<QuickPanel> {
                         size: 14,
                         color: favoriteColor,
                       ),
+                    ),
+                  if (canDrag)
+                    ReorderableDragStartListener(
+                      index: index,
+                      child: ReorderGrip(
+                        visible: hovered,
+                        enabled: true,
+                        compact: true,
+                      ),
+                    ),
+                  if (showGroupedGrip)
+                    ReorderGrip(
+                      visible: hovered,
+                      enabled: false,
+                      disabledHintKey: 'reorder_disabled_grouped',
+                      compact: true,
                     ),
                 ],
               ),

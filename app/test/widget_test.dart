@@ -601,6 +601,7 @@ class Harness extends StatefulWidget {
 class _HarnessState extends State<Harness> {
   AppLanguage _language = AppLanguage.zh;
   ThemeMode _themeMode = ThemeMode.light;
+  AppSettings _settings = const AppSettings();
 
   @override
   Widget build(BuildContext context) {
@@ -617,13 +618,17 @@ class _HarnessState extends State<Harness> {
         home: HomePage(
           api: widget.api,
           dataCorrupt: false,
-          settings: const AppSettings(),
+          settings: _settings,
           hotkey: null,
           themeMode: _themeMode,
           onThemeModeChanged: (ThemeMode value) =>
               setState(() => _themeMode = value),
-          onSettingsChanged: widget.onSettingsChanged ??
-              (AppSettings _) async {},
+          // Keep the harness copy in step so a settings round-trip (the quick
+          // panel's sort toggle) is observable from widget tests.
+          onSettingsChanged: (AppSettings next) async {
+            setState(() => _settings = next);
+            await (widget.onSettingsChanged ?? (AppSettings _) async {})(next);
+          },
         ),
       ),
     );
@@ -1500,7 +1505,8 @@ void main() {
 
     // The full-window chrome is replaced by the compact tree panel.
     expect(find.byTooltip('新增资源'), findsNothing);
-    expect(find.text('开发'), findsOneWidget);
+    // Flat by default: the stored order, no category header row.
+    expect(find.text('开发'), findsNothing);
     expect(find.text('GitHub'), findsOneWidget);
     expect(find.text('网站'), findsOneWidget);
 
@@ -1544,6 +1550,73 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('预算表 2026'), findsOneWidget);
     expect(find.text('项目主目录'), findsNothing);
+  });
+
+  testWidgets('quick HUD sort button toggles flat and grouped and persists it',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    AppSettings? saved;
+    await pumpApp(
+      tester,
+      api: api,
+      onSettingsChanged: (AppSettings next) async => saved = next,
+    );
+
+    api.emitHotkey('quickLinks');
+    await tester.pumpAndSettle();
+    expect(find.text('开发'), findsNothing);
+
+    await tester.tap(find.byTooltip('切换为按分类分组'));
+    await tester.pumpAndSettle();
+
+    expect(saved?.quickPanelGrouped, isTrue);
+    expect(find.text('开发'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('切换为平铺（按主页顺序）'));
+    await tester.pumpAndSettle();
+
+    expect(saved?.quickPanelGrouped, isFalse);
+    expect(find.text('开发'), findsNothing);
+  });
+
+  testWidgets('dragging in the quick HUD reorders the shared collection',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi(
+      links: <ResourceItem>[
+        ResourceItem(
+          id: 'l1',
+          name: 'GitHub',
+          path: 'https://github.com',
+          kind: ResourceKind.link,
+          category: '开发',
+          createdAt: DateTime(2026, 4, 20),
+        ),
+        ResourceItem(
+          id: 'l2',
+          name: 'DeepSeek',
+          path: 'https://deepseek.com',
+          kind: ResourceKind.link,
+          category: 'AI',
+          createdAt: DateTime(2026, 4, 21),
+        ),
+      ],
+    );
+    await pumpApp(tester, api: api);
+
+    api.emitHotkey('quickLinks');
+    await tester.pumpAndSettle();
+
+    await dragReorderGrip(
+      tester,
+      find.byIcon(Icons.drag_indicator).first,
+      const Offset(0, 48),
+    );
+
+    expect(api.reorderCalls, 1);
+    expect(
+      api.links.map((ResourceItem item) => item.id).toList(),
+      <String>['l2', 'l1'],
+    );
   });
 
   testWidgets('quick HUD Tab switches between the two trees',

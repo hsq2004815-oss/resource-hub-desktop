@@ -70,6 +70,10 @@ class Settings:
     global_hotkey_id: str = DEFAULT_HOTKEY_ID
     quick_links_hotkey_id: str = DEFAULT_QUICK_LINKS_HOTKEY_ID
     quick_folders_hotkey_id: str = DEFAULT_QUICK_FOLDERS_HOTKEY_ID
+    #: Quick panel row order. Off = flat list in the stored order (the same
+    #: order the main window shows, so dragging in the HUD reorders both);
+    #: on = grouped under category headers, the original Phase 16 layout.
+    quick_panel_grouped: bool = False
     #: Mouse side buttons (XBUTTON1/2) open the quick panels. Off by default:
     #: the hook swallows the back/forward buttons system-wide.
     mouse_side_buttons_enabled: bool = False
@@ -92,6 +96,7 @@ class Settings:
             "globalHotkeyId": self.global_hotkey_id,
             "quickLinksHotkeyId": self.quick_links_hotkey_id,
             "quickFoldersHotkeyId": self.quick_folders_hotkey_id,
+            "quickPanelGrouped": self.quick_panel_grouped,
             "mouseSideButtonsEnabled": self.mouse_side_buttons_enabled,
             "launchAtStartup": self.launch_at_startup,
             "bookmarkSyncEnabled": self.bookmark_sync_enabled,
@@ -167,6 +172,10 @@ class Settings:
         shell_menu = raw.get("shellContextMenuEnabled")
         if isinstance(shell_menu, bool):
             settings = replace(settings, shell_context_menu_enabled=shell_menu)
+
+        panel_grouped = raw.get("quickPanelGrouped")
+        if isinstance(panel_grouped, bool):
+            settings = replace(settings, quick_panel_grouped=panel_grouped)
 
         # Phase 22. The API key is deliberately *not* a settings field: a key in
         # settings.json would be plaintext, so it lives in AiKeyStore instead.

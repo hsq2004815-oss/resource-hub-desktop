@@ -154,6 +154,7 @@ class AppSettings {
     this.globalHotkeyId = kDefaultGlobalHotkey,
     this.quickLinksHotkeyId = kDefaultQuickLinksHotkey,
     this.quickFoldersHotkeyId = kDefaultQuickFoldersHotkey,
+    this.quickPanelGrouped = false,
     this.mouseSideButtonsEnabled = false,
     this.bookmarkSyncEnabled = kDefaultBookmarkSyncEnabled,
     this.bookmarkCustomDir = kDefaultBookmarkCustomDir,
@@ -174,6 +175,11 @@ class AppSettings {
 
   /// Phase 16: opens the compact folder tree HUD without the main window.
   final String quickFoldersHotkeyId;
+
+  /// Quick panel row order. False = flat list in the stored order (the same
+  /// order the main window shows, so dragging in the HUD reorders both);
+  /// true = grouped under category headers.
+  final bool quickPanelGrouped;
 
   /// Opt-in: XBUTTON1 ("back") opens the web links HUD and XBUTTON2
   /// ("forward") the folders HUD. The hook swallows both buttons.
@@ -206,6 +212,7 @@ class AppSettings {
     String? globalHotkeyId,
     String? quickLinksHotkeyId,
     String? quickFoldersHotkeyId,
+    bool? quickPanelGrouped,
     bool? mouseSideButtonsEnabled,
     bool? bookmarkSyncEnabled,
     String? bookmarkCustomDir,
@@ -223,6 +230,7 @@ class AppSettings {
       quickLinksHotkeyId: quickLinksHotkeyId ?? this.quickLinksHotkeyId,
       quickFoldersHotkeyId:
           quickFoldersHotkeyId ?? this.quickFoldersHotkeyId,
+      quickPanelGrouped: quickPanelGrouped ?? this.quickPanelGrouped,
       mouseSideButtonsEnabled:
           mouseSideButtonsEnabled ?? this.mouseSideButtonsEnabled,
       bookmarkSyncEnabled: bookmarkSyncEnabled ?? this.bookmarkSyncEnabled,
@@ -243,6 +251,7 @@ class AppSettings {
         'globalHotkeyId': globalHotkeyId,
         'quickLinksHotkeyId': quickLinksHotkeyId,
         'quickFoldersHotkeyId': quickFoldersHotkeyId,
+        'quickPanelGrouped': quickPanelGrouped,
         'mouseSideButtonsEnabled': mouseSideButtonsEnabled,
         'bookmarkSyncEnabled': bookmarkSyncEnabled,
         'bookmarkCustomDir': bookmarkCustomDir,
@@ -263,6 +272,7 @@ class AppSettings {
           json['quickLinksHotkeyId'] as String? ?? kDefaultQuickLinksHotkey,
       quickFoldersHotkeyId:
           json['quickFoldersHotkeyId'] as String? ?? kDefaultQuickFoldersHotkey,
+      quickPanelGrouped: json['quickPanelGrouped'] as bool? ?? false,
       mouseSideButtonsEnabled:
           json['mouseSideButtonsEnabled'] as bool? ?? false,
       bookmarkSyncEnabled: json['bookmarkSyncEnabled'] as bool? ??

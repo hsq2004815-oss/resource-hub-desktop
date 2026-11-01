@@ -1793,7 +1793,33 @@ class _HomePageState extends State<HomePage> {
         onOpenPath: (String path) => unawaited(_openPathFromQuick(path)),
         onSwitchKind: _switchQuickKind,
         onClose: () => unawaited(_closeQuick()),
+        grouped: widget.settings.quickPanelGrouped,
+        onToggleGrouped: _toggleQuickGrouped,
+        onReorder: (List<String> ids) => unawaited(_reorderQuick(ids)),
       ),
+    );
+  }
+
+  /// Flips the HUD between category groups and the flat stored order, and
+  /// persists the choice so the next hotkey press keeps it.
+  void _toggleQuickGrouped() {
+    unawaited(
+      widget.onSettingsChanged(
+        widget.settings.copyWith(
+          quickPanelGrouped: !widget.settings.quickPanelGrouped,
+        ),
+      ),
+    );
+  }
+
+  /// A drop in the HUD reorders the shared collection, so the main window
+  /// follows. No undo prompt: the panel is about to be dismissed anyway.
+  Future<void> _reorderQuick(List<String> ids) async {
+    await _applyOrder(
+      _quickKind.isLinks ? ViewMode.links : ViewMode.folders,
+      ids,
+      successKey: 'reorder_saved',
+      allowUndo: false,
     );
   }
 

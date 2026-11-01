@@ -20,6 +20,8 @@ class ReorderGrip extends StatelessWidget {
     super.key,
     required this.visible,
     required this.enabled,
+    this.disabledHintKey = 'reorder_disabled_search',
+    this.compact = false,
   });
 
   /// Whether the row/card is hovered (or being dragged).
@@ -27,6 +29,13 @@ class ReorderGrip extends StatelessWidget {
 
   /// Whether reordering is currently allowed at all.
   final bool enabled;
+
+  /// Tooltip key shown while [enabled] is false; the reason differs per view
+  /// (an active search here, the grouped quick panel there).
+  final String disabledHintKey;
+
+  /// Smaller hit box for a dense list (the quick panel HUD).
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -36,19 +45,22 @@ class ReorderGrip extends StatelessWidget {
       alpha: enabled ? 0.7 : 0.28,
     );
     return Tooltip(
-      message:
-          enabled ? t.tx('drag_to_reorder') : t.tx('reorder_disabled_search'),
+      message: enabled ? t.tx('drag_to_reorder') : t.tx(disabledHintKey),
       waitDuration: const Duration(milliseconds: 500),
       child: MouseRegion(
         cursor: enabled ? SystemMouseCursors.grab : SystemMouseCursors.basic,
         child: SizedBox(
-          width: AppSpacing.xxl,
-          height: AppSpacing.xxxl,
+          width: compact ? 18 : AppSpacing.xxl,
+          height: compact ? 22 : AppSpacing.xxxl,
           child: Center(
             child: AnimatedOpacity(
               opacity: visible || !enabled ? 1 : 0,
               duration: AppDurations.fast,
-              child: Icon(Icons.drag_indicator, size: 16, color: color),
+              child: Icon(
+                Icons.drag_indicator,
+                size: compact ? 14 : 16,
+                color: color,
+              ),
             ),
           ),
         ),

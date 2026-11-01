@@ -207,6 +207,24 @@ class SettingsNormalizeTests(unittest.TestCase):
                 settings = Settings.normalize({"shellContextMenuEnabled": value})
                 self.assertTrue(settings.shell_context_menu_enabled)
 
+    def test_quick_panel_grouped_round_trip(self) -> None:
+        # Flat (the main window's order) is the default; grouping is opt-in.
+        self.assertFalse(Settings().quick_panel_grouped)
+        self.assertIs(Settings().to_json()["quickPanelGrouped"], False)
+
+        payload = Settings(quick_panel_grouped=True).to_json()
+        self.assertIs(payload["quickPanelGrouped"], True)
+        self.assertEqual(
+            Settings.normalize(payload),
+            Settings(quick_panel_grouped=True),
+        )
+
+        # Non-bool values fall back to the default instead of raising.
+        for value in (None, "yes", 0, 1, [], {}):
+            with self.subTest(value=value):
+                settings = Settings.normalize({"quickPanelGrouped": value})
+                self.assertFalse(settings.quick_panel_grouped)
+
     def test_non_bool_flags_are_ignored(self) -> None:
         settings = Settings.normalize(
             {"globalHotkeyEnabled": "yes", "launchAtStartup": 1}
