@@ -788,14 +788,13 @@ class Dispatcher:
         settings = self.state.settings
         targets = (
             ("toggle", settings.global_hotkey_id),
-            ("quickLinks", settings.quick_links_hotkey_id),
-            ("quickFolders", settings.quick_folders_hotkey_id),
+            ("quick", settings.quick_panel_hotkey_id),
         )
         registrations: list[dict[str, Any]] = []
         toggle_label = settings.global_hotkey_id
         toggle_registered = False
         if settings.global_hotkey_enabled:
-            # One listener per action: three message pumps are independent
+            # One listener per action: the message pumps are independent
             # because each registers with hWnd NULL on its own thread.
             for action, label in targets:
                 listener = GlobalHotkeyListener(label, self._hotkey_pressed(action))

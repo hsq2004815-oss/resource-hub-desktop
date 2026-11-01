@@ -255,6 +255,9 @@ class _HomePageState extends State<HomePage> {
       return;
     }
     switch (event.payload['action']) {
+      case 'quick':
+        await _openQuickFromHotkey();
+      // The mouse side buttons keep one tree each (Phase 26).
       case 'quickLinks':
         await _openQuick(QuickPanelKind.links);
       case 'quickFolders':
@@ -504,6 +507,16 @@ class _HomePageState extends State<HomePage> {
   /// "return to where you were" behaviour.
   Future<void> _handleQuickDismissed(String reason) =>
       _closeQuick(hideWindow: reason == 'deactivate');
+
+  /// The single quick-panel hotkey (Phase 28): opens the sites tree, and
+  /// switches trees when the panel is already up.
+  Future<void> _openQuickFromHotkey() async {
+    if (_quickMode) {
+      _switchQuickKind();
+      return;
+    }
+    await _openQuick(QuickPanelKind.links);
+  }
 
   void _switchQuickKind() {
     if (!mounted) {

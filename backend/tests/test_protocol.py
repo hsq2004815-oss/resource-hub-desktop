@@ -431,8 +431,7 @@ class SettingsTests(ProtocolTestCase):
         settings = self.call("settings.get")["result"]["settings"]
         self.assertEqual(settings["language"], "zh")
         self.assertEqual(settings["globalHotkeyId"], "Ctrl + Alt + Space")
-        self.assertEqual(settings["quickLinksHotkeyId"], "Ctrl + Alt + Shift + L")
-        self.assertEqual(settings["quickFoldersHotkeyId"], "Ctrl + Alt + Shift + F")
+        self.assertEqual(settings["quickPanelHotkeyId"], "Alt + Space")
 
     def test_set_normalises_and_persists(self) -> None:
         result = self.call(
@@ -441,20 +440,17 @@ class SettingsTests(ProtocolTestCase):
                 "settings": {
                     "language": "en",
                     "globalHotkeyId": "control+shift+q",
-                    "quickLinksHotkeyId": "control+shift+l",
-                    "quickFoldersHotkeyId": "alt+control+f",
+                    "quickPanelHotkeyId": "control+shift+v",
                 }
             },
         )["result"]["settings"]
         self.assertEqual(result["language"], "en")
         self.assertEqual(result["globalHotkeyId"], "Ctrl + Shift + Q")
-        self.assertEqual(result["quickLinksHotkeyId"], "Ctrl + Shift + L")
-        self.assertEqual(result["quickFoldersHotkeyId"], "Ctrl + Alt + F")
+        self.assertEqual(result["quickPanelHotkeyId"], "Ctrl + Shift + V")
 
         persisted = json.loads((self.dir / "settings.json").read_text(encoding="utf-8"))
         self.assertEqual(persisted["language"], "en")
-        self.assertEqual(persisted["quickLinksHotkeyId"], "Ctrl + Shift + L")
-        self.assertEqual(persisted["quickFoldersHotkeyId"], "Ctrl + Alt + F")
+        self.assertEqual(persisted["quickPanelHotkeyId"], "Ctrl + Shift + V")
 
     def test_set_rejects_non_object(self) -> None:
         frame = self.call("settings.set", {"settings": "nope"})
@@ -1135,14 +1131,8 @@ class EventChannelTests(ProtocolTestCase):
                     "reason": "disabled",
                 },
                 {
-                    "action": "quickLinks",
-                    "label": "Ctrl + Alt + Shift + L",
-                    "registered": False,
-                    "reason": "disabled",
-                },
-                {
-                    "action": "quickFolders",
-                    "label": "Ctrl + Alt + Shift + F",
+                    "action": "quick",
+                    "label": "Alt + Space",
                     "registered": False,
                     "reason": "disabled",
                 },
@@ -1155,15 +1145,14 @@ class EventChannelTests(ProtocolTestCase):
             {
                 "settings": {
                     "globalHotkeyEnabled": False,
-                    "quickLinksHotkeyId": "control+shift+l",
-                    "quickFoldersHotkeyId": "control+shift+f",
+                    "quickPanelHotkeyId": "control+shift+v",
                 }
             },
         )
         result = self.call("hotkey.start")["result"]
         self.assertEqual(
             [entry["label"] for entry in result["registrations"]],
-            ["Ctrl + Alt + Space", "Ctrl + Shift + L", "Ctrl + Shift + F"],
+            ["Ctrl + Alt + Space", "Ctrl + Shift + V"],
         )
 
 

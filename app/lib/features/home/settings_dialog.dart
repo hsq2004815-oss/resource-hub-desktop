@@ -21,7 +21,7 @@ import '../../widgets/app_button.dart';
 import '../../widgets/app_fields.dart';
 
 /// Which recorder row is currently capturing a key combination.
-enum _HotkeyField { toggle, quickLinks, quickFolders }
+enum _HotkeyField { toggle, quick }
 
 class SettingsDialog extends StatefulWidget {
   const SettingsDialog({
@@ -282,8 +282,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
   List<String> _otherHotkeyIds(_HotkeyField field) => <String>[
         if (field != _HotkeyField.toggle) _settings.globalHotkeyId,
-        if (field != _HotkeyField.quickLinks) _settings.quickLinksHotkeyId,
-        if (field != _HotkeyField.quickFolders) _settings.quickFoldersHotkeyId,
+        if (field != _HotkeyField.quick) _settings.quickPanelHotkeyId,
       ];
 
   /// Handles one key press while recording. Runs asynchronously because probing
@@ -341,9 +340,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
     }
     final AppSettings next = switch (field) {
       _HotkeyField.toggle => _settings.copyWith(globalHotkeyId: label),
-      _HotkeyField.quickLinks => _settings.copyWith(quickLinksHotkeyId: label),
-      _HotkeyField.quickFolders =>
-        _settings.copyWith(quickFoldersHotkeyId: label),
+      _HotkeyField.quick => _settings.copyWith(quickPanelHotkeyId: label),
     };
     setState(() {
       _recordingField = null;
@@ -906,15 +903,9 @@ class _SettingsDialogState extends State<SettingsDialog> {
                       ),
                       _hotkeyRow(
                         context,
-                        field: _HotkeyField.quickLinks,
-                        label: t.tx('settings_quick_links'),
-                        value: _settings.quickLinksHotkeyId,
-                      ),
-                      _hotkeyRow(
-                        context,
-                        field: _HotkeyField.quickFolders,
-                        label: t.tx('settings_quick_folders'),
-                        value: _settings.quickFoldersHotkeyId,
+                        field: _HotkeyField.quick,
+                        label: t.tx('settings_quick_panel'),
+                        value: _settings.quickPanelHotkeyId,
                       ),
                       const SizedBox(height: AppSpacing.xl),
                       Row(

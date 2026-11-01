@@ -131,8 +131,9 @@ class ImportOutcome {
 /// claimed by other applications on the reference Windows machine, where the
 /// backend reports them as taken.
 const String kDefaultGlobalHotkey = 'Ctrl + Alt + Space';
-const String kDefaultQuickLinksHotkey = 'Ctrl + Alt + Shift + L';
-const String kDefaultQuickFoldersHotkey = 'Ctrl + Alt + Shift + F';
+/// One key opens the quick panel; pressing it again while the panel is open
+/// switches between the sites and folders trees (Phase 28).
+const String kDefaultQuickPanelHotkey = 'Alt + Space';
 const bool kDefaultBookmarkSyncEnabled = true;
 const String kDefaultBookmarkCustomDir = '';
 const String kDefaultBookmarkDeleteMode = 'ask';
@@ -152,8 +153,7 @@ class AppSettings {
     this.language = 'zh',
     this.globalHotkeyEnabled = true,
     this.globalHotkeyId = kDefaultGlobalHotkey,
-    this.quickLinksHotkeyId = kDefaultQuickLinksHotkey,
-    this.quickFoldersHotkeyId = kDefaultQuickFoldersHotkey,
+    this.quickPanelHotkeyId = kDefaultQuickPanelHotkey,
     this.quickPanelGrouped = false,
     this.mouseSideButtonsEnabled = false,
     this.bookmarkSyncEnabled = kDefaultBookmarkSyncEnabled,
@@ -170,11 +170,9 @@ class AppSettings {
   final bool globalHotkeyEnabled;
   final String globalHotkeyId;
 
-  /// Phase 16: opens the compact web-links tree HUD without the main window.
-  final String quickLinksHotkeyId;
-
-  /// Phase 16: opens the compact folder tree HUD without the main window.
-  final String quickFoldersHotkeyId;
+  /// Phase 28: opens the compact HUD without the main window. Pressing it
+  /// again while the panel is open switches to the other tree.
+  final String quickPanelHotkeyId;
 
   /// Quick panel row order. False = flat list in the stored order (the same
   /// order the main window shows, so dragging in the HUD reorders both);
@@ -210,8 +208,7 @@ class AppSettings {
     String? language,
     bool? globalHotkeyEnabled,
     String? globalHotkeyId,
-    String? quickLinksHotkeyId,
-    String? quickFoldersHotkeyId,
+    String? quickPanelHotkeyId,
     bool? quickPanelGrouped,
     bool? mouseSideButtonsEnabled,
     bool? bookmarkSyncEnabled,
@@ -227,9 +224,7 @@ class AppSettings {
       language: language ?? this.language,
       globalHotkeyEnabled: globalHotkeyEnabled ?? this.globalHotkeyEnabled,
       globalHotkeyId: globalHotkeyId ?? this.globalHotkeyId,
-      quickLinksHotkeyId: quickLinksHotkeyId ?? this.quickLinksHotkeyId,
-      quickFoldersHotkeyId:
-          quickFoldersHotkeyId ?? this.quickFoldersHotkeyId,
+      quickPanelHotkeyId: quickPanelHotkeyId ?? this.quickPanelHotkeyId,
       quickPanelGrouped: quickPanelGrouped ?? this.quickPanelGrouped,
       mouseSideButtonsEnabled:
           mouseSideButtonsEnabled ?? this.mouseSideButtonsEnabled,
@@ -249,8 +244,7 @@ class AppSettings {
         'language': language,
         'globalHotkeyEnabled': globalHotkeyEnabled,
         'globalHotkeyId': globalHotkeyId,
-        'quickLinksHotkeyId': quickLinksHotkeyId,
-        'quickFoldersHotkeyId': quickFoldersHotkeyId,
+        'quickPanelHotkeyId': quickPanelHotkeyId,
         'quickPanelGrouped': quickPanelGrouped,
         'mouseSideButtonsEnabled': mouseSideButtonsEnabled,
         'bookmarkSyncEnabled': bookmarkSyncEnabled,
@@ -268,10 +262,8 @@ class AppSettings {
       language: json['language'] as String? ?? 'zh',
       globalHotkeyEnabled: json['globalHotkeyEnabled'] as bool? ?? true,
       globalHotkeyId: json['globalHotkeyId'] as String? ?? kDefaultGlobalHotkey,
-      quickLinksHotkeyId:
-          json['quickLinksHotkeyId'] as String? ?? kDefaultQuickLinksHotkey,
-      quickFoldersHotkeyId:
-          json['quickFoldersHotkeyId'] as String? ?? kDefaultQuickFoldersHotkey,
+      quickPanelHotkeyId:
+          json['quickPanelHotkeyId'] as String? ?? kDefaultQuickPanelHotkey,
       quickPanelGrouped: json['quickPanelGrouped'] as bool? ?? false,
       mouseSideButtonsEnabled:
           json['mouseSideButtonsEnabled'] as bool? ?? false,

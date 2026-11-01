@@ -13,8 +13,7 @@ from resource_hub_core.settings import (
     DEFAULT_BOOKMARK_DELETE_MODE,
     DEFAULT_HOTKEY_ID,
     DEFAULT_LANGUAGE,
-    DEFAULT_QUICK_FOLDERS_HOTKEY_ID,
-    DEFAULT_QUICK_LINKS_HOTKEY_ID,
+    DEFAULT_QUICK_PANEL_HOTKEY_ID,
     DELETE_MODES,
     Settings,
     SettingsStore,
@@ -24,12 +23,12 @@ from resource_hub_core.settings import (
 class SettingsNormalizeTests(unittest.TestCase):
     def test_quick_panel_defaults(self) -> None:
         settings = Settings()
-        # Four-key combinations: Ctrl+Alt+L/F are already claimed by other apps
-        # on the reference machine, so plain L/F would be unavailable there.
-        self.assertEqual(DEFAULT_QUICK_LINKS_HOTKEY_ID, "Ctrl + Alt + Shift + L")
-        self.assertEqual(DEFAULT_QUICK_FOLDERS_HOTKEY_ID, "Ctrl + Alt + Shift + F")
-        self.assertEqual(settings.quick_links_hotkey_id, DEFAULT_QUICK_LINKS_HOTKEY_ID)
-        self.assertEqual(settings.quick_folders_hotkey_id, DEFAULT_QUICK_FOLDERS_HOTKEY_ID)
+        # One launcher key for both trees: pressing it again switches panels,
+        # so a second recorded combination is no longer needed.
+        self.assertEqual(DEFAULT_QUICK_PANEL_HOTKEY_ID, "Alt + Space")
+        self.assertEqual(
+            settings.quick_panel_hotkey_id, DEFAULT_QUICK_PANEL_HOTKEY_ID
+        )
 
     def test_defaults_for_non_mapping(self) -> None:
         for raw in (None, [], "x", 42):
@@ -38,10 +37,7 @@ class SettingsNormalizeTests(unittest.TestCase):
                 self.assertEqual(settings.language, DEFAULT_LANGUAGE)
                 self.assertEqual(settings.global_hotkey_id, DEFAULT_HOTKEY_ID)
                 self.assertEqual(
-                    settings.quick_links_hotkey_id, DEFAULT_QUICK_LINKS_HOTKEY_ID
-                )
-                self.assertEqual(
-                    settings.quick_folders_hotkey_id, DEFAULT_QUICK_FOLDERS_HOTKEY_ID
+                    settings.quick_panel_hotkey_id, DEFAULT_QUICK_PANEL_HOTKEY_ID
                 )
                 self.assertTrue(settings.global_hotkey_enabled)
                 self.assertFalse(settings.launch_at_startup)
@@ -124,39 +120,35 @@ class SettingsNormalizeTests(unittest.TestCase):
                 settings = Settings.normalize({"globalHotkeyId": value})
                 self.assertEqual(settings.global_hotkey_id, DEFAULT_HOTKEY_ID)
 
-    def test_quick_panel_hotkeys_are_canonicalised(self) -> None:
+    def test_quick_panel_hotkey_is_canonicalised(self) -> None:
+        settings = Settings.normalize({"quickPanelHotkeyId": "control+shift+v"})
+        self.assertEqual(settings.quick_panel_hotkey_id, "Ctrl + Shift + V")
+
+    def test_legacy_two_hotkeys_are_ignored(self) -> None:
+        # Files written before Phase 28 still carry the old pair; the single
+        # panel key must fall back to its default instead of adopting them.
         settings = Settings.normalize(
             {
                 "quickLinksHotkeyId": "control+shift+l",
                 "quickFoldersHotkeyId": "alt+control+f",
             }
         )
-        self.assertEqual(settings.quick_links_hotkey_id, "Ctrl + Shift + L")
-        self.assertEqual(settings.quick_folders_hotkey_id, "Ctrl + Alt + F")
+        self.assertEqual(
+            settings.quick_panel_hotkey_id, DEFAULT_QUICK_PANEL_HOTKEY_ID
+        )
 
-    def test_invalid_quick_panel_hotkeys_keep_defaults(self) -> None:
+    def test_invalid_quick_panel_hotkey_keeps_default(self) -> None:
         for value in ("Space", "Ctrl + Nope", "", "Ctrl + A + B"):
             with self.subTest(value=value):
-                settings = Settings.normalize(
-                    {
-                        "quickLinksHotkeyId": value,
-                        "quickFoldersHotkeyId": value,
-                    }
-                )
+                settings = Settings.normalize({"quickPanelHotkeyId": value})
                 self.assertEqual(
-                    settings.quick_links_hotkey_id, DEFAULT_QUICK_LINKS_HOTKEY_ID
-                )
-                self.assertEqual(
-                    settings.quick_folders_hotkey_id, DEFAULT_QUICK_FOLDERS_HOTKEY_ID
+                    settings.quick_panel_hotkey_id, DEFAULT_QUICK_PANEL_HOTKEY_ID
                 )
 
-    def test_to_json_normalize_roundtrip_includes_quick_panel_keys(self) -> None:
+    def test_to_json_normalize_roundtrip_includes_quick_panel_key(self) -> None:
         payload = Settings().to_json()
         self.assertEqual(
-            payload["quickLinksHotkeyId"], DEFAULT_QUICK_LINKS_HOTKEY_ID
-        )
-        self.assertEqual(
-            payload["quickFoldersHotkeyId"], DEFAULT_QUICK_FOLDERS_HOTKEY_ID
+            payload["quickPanelHotkeyId"], DEFAULT_QUICK_PANEL_HOTKEY_ID
         )
         self.assertEqual(Settings.normalize(payload), Settings())
 
@@ -339,10 +331,7 @@ class SettingsStoreTests(unittest.TestCase):
             self.assertEqual(payload["language"], DEFAULT_LANGUAGE)
             self.assertEqual(payload["globalHotkeyId"], DEFAULT_HOTKEY_ID)
             self.assertEqual(
-                payload["quickLinksHotkeyId"], DEFAULT_QUICK_LINKS_HOTKEY_ID
-            )
-            self.assertEqual(
-                payload["quickFoldersHotkeyId"], DEFAULT_QUICK_FOLDERS_HOTKEY_ID
+                payload["quickPanelHotkeyId"], DEFAULT_QUICK_PANEL_HOTKEY_ID
             )
 
     def test_save_load_roundtrip(self) -> None:
@@ -353,8 +342,7 @@ class SettingsStoreTests(unittest.TestCase):
                 language="en",
                 global_hotkey_enabled=False,
                 global_hotkey_id="Ctrl + Space",
-                quick_links_hotkey_id="Ctrl + Shift + L",
-                quick_folders_hotkey_id="Ctrl + Shift + F",
+                quick_panel_hotkey_id="Ctrl + Shift + V",
                 launch_at_startup=True,
                 bookmark_sync_enabled=False,
                 bookmark_custom_dir="D:\\Bookmarks",

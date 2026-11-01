@@ -17,8 +17,10 @@ from .storage import CorruptDataError, JsonFileStore
 
 DEFAULT_LANGUAGE = "zh"
 DEFAULT_HOTKEY_ID = "Ctrl + Alt + Space"
-DEFAULT_QUICK_LINKS_HOTKEY_ID = "Ctrl + Alt + Shift + L"
-DEFAULT_QUICK_FOLDERS_HOTKEY_ID = "Ctrl + Alt + Shift + F"
+#: One key opens the quick panel; pressing it again while the panel is open
+#: switches between the sites and folders trees (Phase 28). Alt+Space is the
+#: launcher convention (PowerToys Run) and does not steal a common edit shortcut.
+DEFAULT_QUICK_PANEL_HOTKEY_ID = "Alt + Space"
 SUPPORTED_LANGUAGES = frozenset({"zh", "en"})
 
 #: Phase 22: DeepSeek-compatible AI category suggestions (opt-in, off by default).
@@ -68,8 +70,7 @@ class Settings:
     language: str = DEFAULT_LANGUAGE
     global_hotkey_enabled: bool = True
     global_hotkey_id: str = DEFAULT_HOTKEY_ID
-    quick_links_hotkey_id: str = DEFAULT_QUICK_LINKS_HOTKEY_ID
-    quick_folders_hotkey_id: str = DEFAULT_QUICK_FOLDERS_HOTKEY_ID
+    quick_panel_hotkey_id: str = DEFAULT_QUICK_PANEL_HOTKEY_ID
     #: Quick panel row order. Off = flat list in the stored order (the same
     #: order the main window shows, so dragging in the HUD reorders both);
     #: on = grouped under category headers, the original Phase 16 layout.
@@ -94,8 +95,7 @@ class Settings:
             "language": self.language,
             "globalHotkeyEnabled": self.global_hotkey_enabled,
             "globalHotkeyId": self.global_hotkey_id,
-            "quickLinksHotkeyId": self.quick_links_hotkey_id,
-            "quickFoldersHotkeyId": self.quick_folders_hotkey_id,
+            "quickPanelHotkeyId": self.quick_panel_hotkey_id,
             "quickPanelGrouped": self.quick_panel_grouped,
             "mouseSideButtonsEnabled": self.mouse_side_buttons_enabled,
             "launchAtStartup": self.launch_at_startup,
@@ -133,23 +133,14 @@ class Settings:
         if parsed:
             settings = replace(settings, global_hotkey_id=parsed[0])
 
-        quick_links_id = raw.get("quickLinksHotkeyId")
+        quick_panel_id = raw.get("quickPanelHotkeyId")
         parsed = (
-            parse_hotkey_id(str(quick_links_id))
-            if quick_links_id is not None
+            parse_hotkey_id(str(quick_panel_id))
+            if quick_panel_id is not None
             else None
         )
         if parsed:
-            settings = replace(settings, quick_links_hotkey_id=parsed[0])
-
-        quick_folders_id = raw.get("quickFoldersHotkeyId")
-        parsed = (
-            parse_hotkey_id(str(quick_folders_id))
-            if quick_folders_id is not None
-            else None
-        )
-        if parsed:
-            settings = replace(settings, quick_folders_hotkey_id=parsed[0])
+            settings = replace(settings, quick_panel_hotkey_id=parsed[0])
 
         startup = raw.get("launchAtStartup")
         if isinstance(startup, bool):

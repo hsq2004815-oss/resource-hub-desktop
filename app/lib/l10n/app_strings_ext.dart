@@ -64,9 +64,9 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
     'hotkey_unavailable_any': '快捷键 {0} 被其他程序占用，暂不可用。',
     'hotkey_duplicate': '该快捷键已被另一个动作使用。',
     'settings_quick_title': '快速面板快捷键',
-    'settings_quick_hint': '只弹出树状图，不打开完整窗口。',
-    'settings_quick_links': '网站树快捷键',
-    'settings_quick_folders': '文件夹树快捷键',
+    'settings_quick_hint': '只弹出树状图，不打开完整窗口。'
+        '按一次打开网站树，再按一次切到文件夹树；面板内也可以按 Tab 切换。',
+    'settings_quick_panel': '快速面板',
     'settings_mouse_side_buttons': '鼠标侧键',
     'settings_mouse_side_buttons_hint': '后侧键打开网站面板，前侧键打开文件夹面板；'
         '开启后会接管鼠标的后退 / 前进键。',
@@ -208,11 +208,11 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
     'hotkey_unavailable_reason': 'Global hotkey {0} is taken by another app.',
     'hotkey_unavailable_any': 'Shortcut {0} is taken by another app.',
     'hotkey_duplicate': 'That shortcut is already used by another action.',
-    'settings_quick_title': 'Quick panel hotkeys',
-    'settings_quick_hint':
-        'Show a tree without opening the full window.',
-    'settings_quick_links': 'Web links tree',
-    'settings_quick_folders': 'Folders tree',
+    'settings_quick_title': 'Quick panel hotkey',
+    'settings_quick_hint': 'Show a tree without opening the full window. '
+        'Press once for sites, again for folders; Tab also switches inside '
+        'the panel.',
+    'settings_quick_panel': 'Quick panel',
     'settings_mouse_side_buttons': 'Mouse side buttons',
     'settings_mouse_side_buttons_hint':
         'Back button opens the web links panel, forward opens the folders '

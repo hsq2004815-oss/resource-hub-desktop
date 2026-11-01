@@ -1013,10 +1013,11 @@ void main() {
     );
 
     await openSettings(tester);
-    expect(find.text('录制快捷键'), findsNWidgets(3));
+    // Two recorders since Phase 28: the full window, and the single quick-panel
+    // key (a second press inside the panel switches trees).
+    expect(find.text('录制快捷键'), findsNWidgets(2));
 
-    // The full-window recorder is the first row; the other two belong to the
-    // quick-panel trees.
+    // The full-window recorder is the first row; the second is the panel key.
     await tester.tap(find.text('录制快捷键').first);
     await tester.pumpAndSettle();
 
@@ -1030,7 +1031,7 @@ void main() {
 
     expect(saved, isNotEmpty);
     expect(saved.last.globalHotkeyId, 'Ctrl + F11');
-    expect(find.text('录制快捷键'), findsNWidgets(3));
+    expect(find.text('录制快捷键'), findsNWidgets(2));
   });
 
   testWidgets('settings language can be switched back and forth',
@@ -1500,7 +1501,7 @@ void main() {
     await pumpApp(tester, api: api);
     expect(find.byTooltip('新增资源'), findsOneWidget);
 
-    api.emitHotkey('quickLinks');
+    api.emitHotkey('quick');
     await tester.pumpAndSettle();
 
     // The full-window chrome is replaced by the compact tree panel.
@@ -1520,7 +1521,7 @@ void main() {
     final FakeApi api = FakeApi();
     await pumpApp(tester, api: api);
 
-    api.emitHotkey('quickLinks');
+    api.emitHotkey('quick');
     await tester.pumpAndSettle();
     // First selectable row is pre-selected; Enter activates it.
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -1535,7 +1536,10 @@ void main() {
     final FakeApi api = FakeApi();
     await pumpApp(tester, api: api);
 
-    api.emitHotkey('quickFolders');
+    // One hotkey: the first press opens the sites tree, the second switches.
+    api.emitHotkey('quick');
+    await tester.pumpAndSettle();
+    api.emitHotkey('quick');
     await tester.pumpAndSettle();
     expect(find.text('项目主目录'), findsOneWidget);
     expect(find.text('文件夹'), findsOneWidget);
@@ -1552,6 +1556,27 @@ void main() {
     expect(find.text('项目主目录'), findsNothing);
   });
 
+  testWidgets('one hotkey opens the panel and a second press switches trees',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    api.emitHotkey('quick');
+    await tester.pumpAndSettle();
+    expect(find.text('GitHub'), findsOneWidget);
+    expect(find.text('项目主目录'), findsNothing);
+
+    api.emitHotkey('quick');
+    await tester.pumpAndSettle();
+    expect(find.text('项目主目录'), findsOneWidget);
+    expect(find.text('GitHub'), findsNothing);
+
+    api.emitHotkey('quick');
+    await tester.pumpAndSettle();
+    expect(find.text('GitHub'), findsOneWidget);
+    expect(find.text('项目主目录'), findsNothing);
+  });
+
   testWidgets('quick HUD sort button toggles flat and grouped and persists it',
       (WidgetTester tester) async {
     final FakeApi api = FakeApi();
@@ -1562,7 +1587,7 @@ void main() {
       onSettingsChanged: (AppSettings next) async => saved = next,
     );
 
-    api.emitHotkey('quickLinks');
+    api.emitHotkey('quick');
     await tester.pumpAndSettle();
     expect(find.text('开发'), findsNothing);
 
@@ -1603,7 +1628,7 @@ void main() {
     );
     await pumpApp(tester, api: api);
 
-    api.emitHotkey('quickLinks');
+    api.emitHotkey('quick');
     await tester.pumpAndSettle();
 
     await dragReorderGrip(
@@ -1624,7 +1649,9 @@ void main() {
     final FakeApi api = FakeApi();
     await pumpApp(tester, api: api);
 
-    api.emitHotkey('quickFolders');
+    api.emitHotkey('quick');
+    await tester.pumpAndSettle();
+    api.emitHotkey('quick');
     await tester.pumpAndSettle();
     expect(find.text('文件夹'), findsOneWidget);
 
@@ -1639,7 +1666,7 @@ void main() {
     final FakeApi api = FakeApi();
     await pumpApp(tester, api: api);
 
-    api.emitHotkey('quickLinks');
+    api.emitHotkey('quick');
     await tester.pumpAndSettle();
     await tester.tap(find.text('GitHub'));
     await tester.pumpAndSettle();
@@ -1653,7 +1680,7 @@ void main() {
     final FakeApi api = FakeApi();
     await pumpApp(tester, api: api);
 
-    api.emitHotkey('quickLinks');
+    api.emitHotkey('quick');
     await tester.pumpAndSettle();
     await tester.tap(
       find.text('GitHub'),
@@ -1673,7 +1700,7 @@ void main() {
       (WidgetTester tester) async {
     final FakeApi api = FakeApi();
     await pumpApp(tester, api: api);
-    api.emitHotkey('quickLinks');
+    api.emitHotkey('quick');
     await tester.pumpAndSettle();
     expect(find.byTooltip('新增资源'), findsNothing);
 
@@ -1697,7 +1724,7 @@ void main() {
         return null;
       },
     );
-    api.emitHotkey('quickLinks');
+    api.emitHotkey('quick');
     await tester.pumpAndSettle();
     expect(find.byTooltip('新增资源'), findsNothing);
 
@@ -1730,7 +1757,9 @@ void main() {
         return null;
       },
     );
-    api.emitHotkey('quickFolders');
+    api.emitHotkey('quick');
+    await tester.pumpAndSettle();
+    api.emitHotkey('quick');
     await tester.pumpAndSettle();
     expect(find.text('项目主目录'), findsOneWidget);
 
@@ -1763,7 +1792,7 @@ void main() {
         return null;
       },
     );
-    api.emitHotkey('quickLinks');
+    api.emitHotkey('quick');
     await tester.pumpAndSettle();
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -1791,7 +1820,7 @@ void main() {
         return null;
       },
     );
-    api.emitHotkey('quickLinks');
+    api.emitHotkey('quick');
     await tester.pumpAndSettle();
     expect(find.byTooltip('新增资源'), findsNothing);
 
@@ -1816,7 +1845,7 @@ void main() {
   ) async {
     final FakeApi api = FakeApi();
     await pumpApp(tester, api: api);
-    api.emitHotkey('quickLinks');
+    api.emitHotkey('quick');
     await tester.pumpAndSettle();
     expect(find.byTooltip('新增资源'), findsNothing);
 
