@@ -140,6 +140,11 @@ class FlutterWindow : public Win32Window {
   // must restore the window first (a maximized window ignores SetWindowPos
   // sizing) and put it back into the maximized state on exit.
   bool quick_saved_maximized_ = false;
+
+  // Phase 35: hand the working set back while the window sits in the tray, so a
+  // background Drawer costs a few MB instead of a few hundred. Delayed, so that
+  // hiding and immediately re-opening it does not page everything back in.
+  void TrimWorkingSet();
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

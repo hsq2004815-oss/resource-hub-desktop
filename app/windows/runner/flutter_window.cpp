@@ -43,6 +43,11 @@ constexpr UINT kQuickActivationSettled = WM_APP + 78;
 constexpr UINT_PTR kQuickForegroundTimerId = 0x5251;
 constexpr UINT kQuickForegroundTimerIntervalMs = 100;
 
+// Phase 35: trim the working set only after the window has been hidden for a
+// while, so hiding and re-opening it right away does not thrash the pagefile.
+constexpr UINT_PTR kTrimWorkingSetTimerId = 0x5252;
+constexpr UINT kTrimWorkingSetDelayMs = 8000;
+
 // Property key used to find the FlutterWindow instance from the subclassed
 // Flutter view window procedure.
 constexpr wchar_t kChildWindowProp[] = L"ResourceHubFlutterWindow";
@@ -442,9 +447,24 @@ void FlutterWindow::HideToTray() {
     return;
   }
   ::ShowWindow(GetHandle(), SW_HIDE);
+  ::SetTimer(GetHandle(), kTrimWorkingSetTimerId, kTrimWorkingSetDelayMs,
+             nullptr);
+}
+
+void FlutterWindow::TrimWorkingSet() {
+  ::KillTimer(GetHandle(), kTrimWorkingSetTimerId);
+  if (IsWindowVisibleNow() || quitting_) {
+    return;
+  }
+  // Pages out what can be paged out: an idle tray icon should not hold a few
+  // hundred megabytes resident. Nothing is freed, so showing the window again
+  // only costs paging back in what it touches.
+  ::SetProcessWorkingSetSize(::GetCurrentProcess(), static_cast<SIZE_T>(-1),
+                             static_cast<SIZE_T>(-1));
 }
 
 void FlutterWindow::ShowFromTray() {
+  ::KillTimer(GetHandle(), kTrimWorkingSetTimerId);
   ::ShowWindow(GetHandle(), SW_RESTORE);
   ::ShowWindow(GetHandle(), SW_SHOW);
   ForceForeground();
@@ -851,6 +871,10 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   // Forcing the foreground for the quick panel briefly produces
   // WM_ACTIVATE(WA_INACTIVE) traffic; ignore dismissal until the posted
   // "settled" message arrives.
+  if (message == WM_TIMER && wparam == kTrimWorkingSetTimerId) {
+    TrimWorkingSet();
+    return 0;
+  }
   if (quick_mode_ && message == WM_TIMER &&
       wparam == kQuickForegroundTimerId) {
     CheckQuickForeground();
