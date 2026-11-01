@@ -37,8 +37,8 @@ searchable list and one hotkey away.
 - **Websites, folders and files — one list.** Same search box, same keyboard flow, different icons.
 - **Open a folder without opening Explorer.** Click a folder row and its contents unfold as a mind
   map you can zoom, pan and drill into.
-- **A quick panel, not a window.** `Ctrl + Alt + Shift + L` / `F` drops a compact tree in the middle
-  of the screen: type, arrow, Enter — gone.
+- **A quick panel, not a window.** `Alt + Space` drops a compact tree in the middle of the
+  screen: type, arrow, Enter — gone. Press it again to switch to the folders tree.
 - **Nothing leaves your machine.** No account, no sync server, no telemetry. All data is a few JSON
   files next to the executable. The only requests go to the sites you saved (their favicon, cached
   locally afterwards) and, if you enable it, your own AI endpoint.
@@ -88,7 +88,7 @@ searchable list and one hotkey away.
 **Quick panel**
 
 - A compact Spotlight-style tree instead of the full window, centered on the current screen.
-- `Ctrl + Alt + Shift + L` — websites; `Ctrl + Alt + Shift + F` — folders (both configurable).
+- `Alt + Space` opens the panel: websites first, press it again for folders (configurable).
 - Optional mouse side buttons: back opens the websites panel, forward the folders panel. While the
   switch is on, Drawer takes over the mouse back / forward buttons.
 - `↑` / `↓` select, `→` expand, `Enter` open, `Esc` close, `Tab` switch panel; type to search.
@@ -144,8 +144,7 @@ deleting it.
 | Shortcut | Action |
 |---|---|
 | `Ctrl + Alt + Space` | Show / hide the main window |
-| `Ctrl + Alt + Shift + L` | Quick panel: websites |
-| `Ctrl + Alt + Shift + F` | Quick panel: folders |
+| `Alt + Space` | Quick panel: press once for websites, again for folders |
 | Mouse Back / Mouse Forward (optional) | Quick panel: websites / folders |
 | `↑` `↓` / `→` / `Enter` / `Esc` / `Tab` | Navigate / expand / open / close / switch panel |
 
