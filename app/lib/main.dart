@@ -67,11 +67,20 @@ class _ResourceHubAppState extends State<ResourceHubApp> {
   @override
   void initState() {
     super.initState();
-    _boot();
+    // Assigned during mount, so no setState is needed for the first build. The
+    // old `setState(() => _pending = ...)` returned a Future from its closure,
+    // which trips Flutter's "setState callback returned a Future" assertion —
+    // debug builds replaced the whole UI with the red error screen.
+    _pending = _startBackend();
   }
 
+  /// Retry entry point for the "backend failed" screen. Block-bodied on
+  /// purpose: `setState(() => ...)` returns the arrow's value, and returning a
+  /// Future from that closure is what the framework asserts on.
   void _boot() {
-    setState(() => _pending = _startBackend());
+    setState(() {
+      _pending = _startBackend();
+    });
   }
 
   /// Keeps the native window title and tray menu in the active language.
