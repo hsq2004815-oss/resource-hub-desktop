@@ -92,6 +92,8 @@ searchable list and one hotkey away.
 - Optional mouse side buttons: back opens the websites panel, forward the folders panel. While the
   switch is on, Drawer takes over the mouse back / forward buttons.
 - `↑` / `↓` select, `→` expand, `Enter` open, `Esc` close, `Tab` switch panel; type to search.
+- A footer button switches the order: flat by default (the main window's order), or grouped under
+  category headers; while flat, drag a row to reorder and the main window follows.
 
 **Folder mind map**
 
