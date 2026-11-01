@@ -110,6 +110,10 @@ searchable list and one hotkey away.
 - Per-site browser: installed browsers are detected automatically. Right-click a site in the quick
   panel to open it once in another browser; the details panel's **Open with** dropdown saves the
   site's default. Bookmark imports remember their origin browser.
+- Folders and files have an **Open with** too: system default, VS Code, Windows Terminal, PowerShell
+  or Command Prompt — pick one for a single open from the context menu, or save it as the default in
+  the details panel. Double-click then uses that default. Programs are found via the registry, so a
+  custom install folder works too.
 - Explorer context menu: right-click a folder background or folder icon → **Add to Drawer**
   (Windows 11: under "Show more options"). The entries can be switched off in Settings.
 - Tray icon, close-to-tray, optional launch at startup, global hotkey with `Ctrl / Alt / Shift / Win`
