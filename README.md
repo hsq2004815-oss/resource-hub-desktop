@@ -40,8 +40,9 @@ searchable list and one hotkey away.
 - **A quick panel, not a window.** `Alt + Space` drops a compact tree in the middle of the
   screen: type, arrow, Enter — gone. Press it again to switch to the folders tree.
 - **Nothing leaves your machine.** No account, no sync server, no telemetry. All data is a few JSON
-  files next to the executable. The only requests go to the sites you saved (their favicon, cached
-  locally afterwards) and, if you enable it, your own AI endpoint.
+  files next to the executable. Requests go to the sites you saved (their favicon, cached locally
+  afterwards), to DuckDuckGo's public icon service when a site has no icon of its own (the domain
+  name only), and, if you enable it, your own AI endpoint.
 
 ## Screenshots
 
@@ -114,11 +115,15 @@ searchable list and one hotkey away.
 - Tray icon, close-to-tray, optional launch at startup, global hotkey with `Ctrl / Alt / Shift / Win`
   combinations.
 
-**Optional AI category suggestions** (experimental, off by default)
+**Optional AI tagging** (off by default)
 
-- A DeepSeek or OpenAI-compatible endpoint proposes categories for uncategorized resources.
-- Nothing is written until you review and apply the proposals; the API key is stored with Windows
-  DPAPI and never committed.
+- A DeepSeek or OpenAI-compatible endpoint tags anything you add, drop in or import from bookmarks,
+  and writes a one-line note for it (≤40 characters, in the UI language; a folder's note also gets
+  a look at its child names).
+- It writes straight in and offers a five-second undo. **A note you wrote yourself is never
+  replaced**, and your categories stay yours.
+- **More → AI fills in notes** backfills every row that has no note, leaving categories untouched.
+- The API key is stored with Windows DPAPI and never committed.
 
 **Quality of life**
 
