@@ -7,6 +7,11 @@ to PNG — Flutter cannot decode ICO — and keeps the result under
 Fetching is deliberately simple: read the home page, try the ``<link rel=icon>``
 targets in preference order, then ``/apple-touch-icon.png`` and ``/favicon.ico``.
 Sites that fail just keep the generic per-kind glyph in the UI.
+
+Phase 32 adds a fallback: when the site itself yields nothing, the icon is asked
+for from DuckDuckGo's public icon endpoint. That request reveals the host name to
+a third party — documented in the README — and it only happens for sites that
+have no usable icon of their own.
 """
 
 from __future__ import annotations
@@ -35,6 +40,9 @@ _MAX_CANDIDATES = 8
 _WORKERS = 4
 _INDEX_VERSION = 1
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+#: Phase 32: public icon endpoint used only as an opt-in fallback.
+_FALLBACK_ICON_URL = "https://icons.duckduckgo.com/ip3/{host}.ico"
 
 #: link rel tokens that qualify as a site icon (``mask-icon`` is SVG on purpose).
 _ICON_RELS = {"icon", "apple-touch-icon", "apple-touch-icon-precomposed"}
@@ -164,6 +172,23 @@ def load_icon(url: str) -> tuple[bytes, str] | None:
         if image is not None:
             return image
     return None
+
+
+def load_fallback_icon(host: str) -> tuple[bytes, str] | None:
+    """Ask DuckDuckGo for a host's icon. Reveals the host name to a third party.
+
+    Only reached when the site itself gave us nothing. A host nobody knows
+    returns 404 and is skipped, so no generic globe is cached.
+    """
+    if not host:
+        return None
+    return _normalize(
+        _fetch(_FALLBACK_ICON_URL.format(host=host), _MAX_ICON_BYTES) or b""
+    )
+
+
+def _load_one(host: str, url: str) -> tuple[bytes, str] | None:
+    return load_icon(url) or load_fallback_icon(host)
 
 
 # -- ICO → PNG --------------------------------------------------------------
@@ -377,7 +402,9 @@ class FaviconStore:
             return self.paths()
         self.dir.mkdir(parents=True, exist_ok=True)
         with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
-            fetched = list(pool.map(load_icon, wanted.values()))
+            fetched = list(
+                pool.map(lambda pair: _load_one(*pair), list(wanted.items()))
+            )
         with self._lock:
             for host, image in zip(wanted, fetched):
                 if image is None:

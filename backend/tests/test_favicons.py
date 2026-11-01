@@ -10,6 +10,7 @@ import threading
 import unittest
 import zlib
 from pathlib import Path
+from unittest import mock
 
 from resource_hub_core.favicons import (
     FaviconStore,
@@ -222,6 +223,32 @@ class StoreTests(unittest.TestCase):
         restarted = FaviconStore(self.dir)
         restarted.refresh([self.url])
         self.assertEqual(len(self.handler.hits), hits)  # cached, no second request
+
+    def test_fallback_fills_the_gap(self) -> None:
+        store = FaviconStore(self.dir)
+        with mock.patch(
+            "resource_hub_core.favicons.load_fallback_icon",
+            return_value=(self.png, "png"),
+        ) as fallback:
+            icons = store.refresh(["http://localhost:1/page"])
+        fallback.assert_called_once_with("localhost")
+        self.assertIn("localhost", icons)
+        self.assertEqual(Path(icons["localhost"]).read_bytes(), self.png)
+        # Cached like any other icon: no second lookup on the next refresh.
+        with mock.patch(
+            "resource_hub_core.favicons.load_fallback_icon"
+        ) as again:
+            store.refresh(["http://localhost:1/page"])
+        again.assert_not_called()
+
+    def test_a_site_with_its_own_icon_never_asks_the_fallback(self) -> None:
+        store = FaviconStore(self.dir)
+        with mock.patch(
+            "resource_hub_core.favicons.load_fallback_icon"
+        ) as fallback:
+            icons = store.refresh([self.url])
+        fallback.assert_not_called()
+        self.assertIn("127.0.0.1", icons)
 
     def test_unknown_host_returns_no_icon(self) -> None:
         store = FaviconStore(self.dir)
