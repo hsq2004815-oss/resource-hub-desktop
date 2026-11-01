@@ -20,6 +20,8 @@ resource_hub_launcher.log
 /.resourcehub-meta.json
 # ...and the .bak copies the data store keeps next to them
 /*.bak
+# Favicon cache the backend writes next to those files
+/favicons/
 
 # Packaged releases (large binaries; rebuild with build-flutter-release.ps1)
 release/
