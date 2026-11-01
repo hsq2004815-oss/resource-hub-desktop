@@ -57,6 +57,7 @@ class ResourceListPanel extends StatelessWidget {
     required this.onSortByAdded,
     required this.onSyncBookmarks,
     required this.onAiSuggest,
+    required this.onBackfillNotes,
     required this.onOpenSettings,
     this.detailsPanel,
   });
@@ -106,6 +107,9 @@ class ResourceListPanel extends StatelessWidget {
 
   /// Phase 22: fetch AI category suggestions for uncategorized resources.
   final VoidCallback onAiSuggest;
+
+  /// Phase 31: fill the notes of every row that has none.
+  final VoidCallback onBackfillNotes;
 
   /// Opens the settings dialog; lives in the toolbar since the in-content top
   /// bar was removed (the native Windows title bar already names the window).
@@ -305,6 +309,8 @@ class ResourceListPanel extends StatelessWidget {
                       onSyncBookmarks();
                     case 'ai_suggest':
                       onAiSuggest();
+                    case 'ai_backfill':
+                      onBackfillNotes();
                     case 'export':
                       onExport();
                     case 'import':
@@ -346,6 +352,19 @@ class ResourceListPanel extends StatelessWidget {
                         const SizedBox(width: AppSpacing.md),
                         Text(
                           t.tx('ai_suggest_menu'),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'ai_backfill',
+                    child: Row(
+                      children: <Widget>[
+                        const Icon(Icons.notes_outlined, size: 16),
+                        const SizedBox(width: AppSpacing.md),
+                        Text(
+                          t.tx('ai_backfill_notes'),
                           style: const TextStyle(fontSize: 13),
                         ),
                       ],

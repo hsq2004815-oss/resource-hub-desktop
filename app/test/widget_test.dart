@@ -487,8 +487,65 @@ class FakeApi implements ResourceApi {
     return aiSuggestions;
   }
 
+  /// Phase 29: the backend undoes its own snapshot; the fake just counts.
+  int aiUndoCalls = 0;
+
+  @override
+  Future<int> undoCategorize() async {
+    aiUndoCalls += 1;
+    return aiUndoCount;
+  }
+
+  /// What [undoCategorize] reports as restored.
+  int aiUndoCount = 0;
+
+  /// Phase 31: backfill counters.
+  int backfillCalls = 0;
+  int undoNotesCalls = 0;
+  int backfillTotal = 2;
+  int undoNotesCount = 2;
+
+  @override
+  Future<int> backfillNotes() async {
+    backfillCalls += 1;
+    return backfillTotal;
+  }
+
+  @override
+  Future<int> undoNotes() async {
+    undoNotesCalls += 1;
+    return undoNotesCount;
+  }
+
+  /// Simulates the backfill's final event.
+  void emitBackfillDone({required int written}) {
+    _events.add(
+      BackendEvent('ai.backfillDone', <String, dynamic>{
+        'written': written,
+        'failed': false,
+      }),
+    );
+  }
+
+  /// Simulates one progress tick.
+  void emitBackfillProgress({required int done, required int total}) {
+    _events.add(
+      BackendEvent('ai.backfillProgress', <String, dynamic>{
+        'done': done,
+        'total': total,
+      }),
+    );
+  }
+
   /// Adds a link as if a bookmark had been imported, for event tests.
   void addBookmarkLink(ResourceItem item) => _links.add(item);
+
+  /// Simulates the backend's automatic-tagging event (Phase 29).
+  void emitAiCategorized({required int applied}) {
+    _events.add(
+      BackendEvent('ai.categorized', <String, dynamic>{'applied': applied}),
+    );
+  }
 
   /// Simulates the backend's background "bookmarks" event.
   void emitBookmarkEvent(int added) {
@@ -2078,6 +2135,62 @@ void main() {
     expect(api.folders.firstWhere((ResourceItem e) => e.id == 'f3').category,
         '设计');
     expect(find.textContaining('已应用 1 条 AI 分类建议'), findsOneWidget);
+  });
+
+  testWidgets('an AI categorization event refreshes the list and can be undone',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    // The backend tags two rows on its own, then pushes the event.
+    api.addBookmarkLink(
+      ResourceItem(
+        id: 'l9',
+        name: 'GitHub',
+        path: 'https://github.com',
+        kind: ResourceKind.link,
+        category: '开发',
+        createdAt: DateTime(2026, 4, 20),
+      ),
+    );
+    api.emitAiCategorized(applied: 2);
+    await tester.pumpAndSettle();
+
+    expect(find.text('AI 已自动分类 2 条'), findsOneWidget);
+    expect(find.text('撤销'), findsOneWidget);
+
+    await tester.tap(find.text('撤销'));
+    await tester.pumpAndSettle();
+
+    expect(api.aiUndoCalls, 1);
+    expect(find.text('已撤销 AI 分类（0 条）'), findsOneWidget);
+  });
+
+  testWidgets('the AI backfill reports progress, writes notes and undoes once',
+      (WidgetTester tester) async {
+    final FakeApi api = FakeApi();
+    await pumpApp(tester, api: api);
+
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('AI 补全备注'));
+    await tester.pumpAndSettle();
+
+    expect(api.backfillCalls, 1);
+    expect(find.text('AI 正在补备注（共 2 条）'), findsOneWidget);
+
+    api.emitBackfillProgress(done: 1, total: 2);
+    await tester.pumpAndSettle();
+    expect(find.text('AI 正在补备注（1/2）'), findsOneWidget);
+
+    api.emitBackfillDone(written: 2);
+    await tester.pumpAndSettle();
+    expect(find.text('AI 补了 2 条备注'), findsOneWidget);
+
+    await tester.tap(find.text('撤销'));
+    await tester.pumpAndSettle();
+    expect(api.undoNotesCalls, 1);
+    expect(find.text('已撤销 AI 备注（2 条）'), findsOneWidget);
   });
 
   testWidgets('AI suggestions without a key show a setup hint', (

@@ -330,6 +330,24 @@ class BackendRepository implements ResourceApi {
         .toList(growable: false);
   }
 
+  @override
+  Future<int> undoCategorize() async {
+    final Map<String, dynamic> result = await client.call('ai.undoCategorize');
+    return (result['restored'] as num?)?.toInt() ?? 0;
+  }
+
+  @override
+  Future<int> backfillNotes() async {
+    final Map<String, dynamic> result = await client.call('ai.backfill');
+    return (result['total'] as num?)?.toInt() ?? 0;
+  }
+
+  @override
+  Future<int> undoNotes() async {
+    final Map<String, dynamic> result = await client.call('ai.undoNotes');
+    return (result['restored'] as num?)?.toInt() ?? 0;
+  }
+
   Future<AppSettings> loadSettings() async {
     final Map<String, dynamic> result = await client.call('settings.get');
     return AppSettings.fromJson(result['settings'] as Map<String, dynamic>);

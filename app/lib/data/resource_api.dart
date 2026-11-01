@@ -129,6 +129,17 @@ abstract interface class ResourceApi {
   /// resources. Nothing is written until the user confirms in the UI.
   Future<List<AiSuggestion>> suggestAiCategories();
 
+  /// Reverts the last automatic run (Phase 29). Returns how many resources
+  /// were put back to uncategorized.
+  Future<int> undoCategorize();
+
+  /// Starts a notes-only backfill over every resource without one (Phase 31).
+  /// Returns how many rows were queued.
+  Future<int> backfillNotes();
+
+  /// Clears the notes the last backfill wrote; categories are untouched.
+  Future<int> undoNotes();
+
   /// Whether [hotkeyId] can be registered right now.
   Future<bool> probeHotkey(String hotkeyId);
 

@@ -72,13 +72,29 @@ class _Status {
   }
 }
 
-/// A manual ordering change that can be reverted from the status bar for a few
-/// seconds. Kept as the previous id order so undo is just another reorder.
-class _UndoAction {
-  const _UndoAction({required this.mode, required this.ids});
+/// Something the status bar can take back for a few seconds.
+sealed class _UndoAction {
+  const _UndoAction();
+}
+
+/// A manual ordering change; undo is just another reorder.
+class _ReorderUndo extends _UndoAction {
+  const _ReorderUndo({required this.mode, required this.ids});
 
   final ViewMode mode;
   final List<String> ids;
+}
+
+/// Categories the AI wrote on its own; the backend keeps the snapshot, so the
+/// undo is one command and carries no state across the wire.
+class _AiUndo extends _UndoAction {
+  const _AiUndo();
+}
+
+/// Notes the backfill wrote. Separate from [_AiUndo] because its undo must
+/// clear notes without touching the categories the user already chose.
+class _NoteUndo extends _UndoAction {
+  const _NoteUndo();
 }
 
 class HomePage extends StatefulWidget {
@@ -251,6 +267,26 @@ class _HomePageState extends State<HomePage> {
       }
       return;
     }
+    if (event.name == 'ai.backfillProgress') {
+      final int done = (event.payload['done'] as num?)?.toInt() ?? 0;
+      final int total = (event.payload['total'] as num?)?.toInt() ?? 0;
+      _setStatus(
+        _Status(
+          key: 'ai_backfill_progress',
+          args: <Object?>[done, total],
+          tone: StatusTone.info,
+        ),
+      );
+      return;
+    }
+    if (event.name == 'ai.backfillDone') {
+      await _handleBackfillDone(event.payload);
+      return;
+    }
+    if (event.name == 'ai.categorized') {
+      await _handleAiCategorized(event.payload);
+      return;
+    }
     if (event.name != 'hotkey') {
       return;
     }
@@ -305,6 +341,135 @@ class _HomePageState extends State<HomePage> {
           tone: StatusTone.success,
         ),
       );
+    }
+  }
+
+  /// The backend tagged rows on its own (Phase 29): refresh both lists and
+  /// offer the same five-second undo the manual reorder uses.
+  Future<void> _handleAiCategorized(Map<String, dynamic> payload) async {
+    final int applied = (payload['applied'] as num?)?.toInt() ?? 0;
+    if (applied <= 0) {
+      return;
+    }
+    await _reload(ViewMode.links);
+    await _reload(ViewMode.folders);
+    if (!mounted) {
+      return;
+    }
+    _setStatus(
+      _Status(
+        key: 'ai_categorized',
+        args: <Object?>[applied],
+        tone: StatusTone.success,
+      ),
+      undo: const _AiUndo(),
+    );
+  }
+
+  Future<void> _undoAiCategorize() async {
+    try {
+      final int restored = await _repo.undoCategorize();
+      await _reload(ViewMode.links);
+      await _reload(ViewMode.folders);
+      if (!mounted) {
+        return;
+      }
+      _setStatus(
+        _Status(
+          key: 'ai_categorized_undone',
+          args: <Object?>[restored],
+          tone: StatusTone.info,
+        ),
+      );
+    } on BackendException catch (error) {
+      if (mounted) {
+        _setStatus(_Status.fromError(error));
+      }
+    }
+  }
+
+  /// Phase 31: fill in the notes of every row that has none. The backend runs
+  /// it in the background and reports progress through events.
+  Future<void> _handleBackfillNotes() async {
+    try {
+      final AiStatus status = await _repo.loadAiStatus();
+      if (!mounted) {
+        return;
+      }
+      if (!status.enabled) {
+        _setStatus(_Status(key: 'ai_not_enabled', tone: StatusTone.warning));
+        return;
+      }
+      if (!status.configured) {
+        _setStatus(_Status(key: 'ai_not_configured', tone: StatusTone.warning));
+        return;
+      }
+      final int total = await _repo.backfillNotes();
+      if (!mounted) {
+        return;
+      }
+      _setStatus(
+        total > 0
+            ? _Status(
+                key: 'ai_backfill_started',
+                args: <Object?>[total],
+                tone: StatusTone.info,
+              )
+            : _Status(key: 'ai_backfill_empty', tone: StatusTone.info),
+      );
+    } on BackendException catch (error) {
+      if (mounted) {
+        _setStatus(_Status.fromError(error));
+      }
+    }
+  }
+
+  Future<void> _handleBackfillDone(Map<String, dynamic> payload) async {
+    final int written = (payload['written'] as num?)?.toInt() ?? 0;
+    final bool failed = payload['failed'] == true;
+    await _reload(ViewMode.links);
+    await _reload(ViewMode.folders);
+    if (!mounted) {
+      return;
+    }
+    if (written <= 0) {
+      _setStatus(
+        _Status(
+          key: failed ? 'ai_backfill_failed' : 'ai_backfill_empty',
+          tone: failed ? StatusTone.warning : StatusTone.info,
+        ),
+      );
+      return;
+    }
+    _setStatus(
+      _Status(
+        key: failed ? 'ai_backfill_partial' : 'ai_backfill_done',
+        args: <Object?>[written],
+        tone: failed ? StatusTone.warning : StatusTone.success,
+      ),
+      undo: const _NoteUndo(),
+    );
+  }
+
+  Future<void> _undoBackfillNotes() async {
+    try {
+      final int restored = await _repo.undoNotes();
+      await _reload(ViewMode.links);
+      await _reload(ViewMode.folders);
+      if (!mounted) {
+        return;
+      }
+      _setStatus(
+        _Status(
+          key: 'ai_backfill_undone',
+          args: <Object?>[restored],
+          tone: StatusTone.info,
+        ),
+      );
+    } on BackendException catch (error) {
+      if (mounted) {
+        _setStatus(_Status.fromError(error));
+      }
     }
   }
 
@@ -903,7 +1068,7 @@ class _HomePageState extends State<HomePage> {
       setState(() => _reorderSaving = false);
       _setStatus(
         _Status(key: successKey, tone: StatusTone.success),
-        undo: allowUndo ? _UndoAction(mode: mode, ids: before) : null,
+        undo: allowUndo ? _ReorderUndo(mode: mode, ids: before) : null,
       );
       return true;
     } on BackendException catch (error) {
@@ -1023,20 +1188,30 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Future<void> _undoOrder() async {
+  Future<void> _undoPressed() async {
     final _UndoAction? undo = _undo;
-    if (undo == null || _reorderSaving) {
+    if (undo == null) {
       return;
     }
     _undoTimer?.cancel();
     _undoTimer = null;
     setState(() => _undo = null);
-    await _applyOrder(
-      undo.mode,
-      undo.ids,
-      successKey: 'reorder_undone',
-      allowUndo: false,
-    );
+    switch (undo) {
+      case _ReorderUndo(:final ViewMode mode, :final List<String> ids):
+        if (_reorderSaving) {
+          return;
+        }
+        await _applyOrder(
+          mode,
+          ids,
+          successKey: 'reorder_undone',
+          allowUndo: false,
+        );
+      case _AiUndo():
+        await _undoAiCategorize();
+      case _NoteUndo():
+        await _undoBackfillNotes();
+    }
   }
 
   // -- mutations ----------------------------------------------------------
@@ -1969,6 +2144,7 @@ class _HomePageState extends State<HomePage> {
                     onSortByAdded: () => unawaited(_sortByAdded()),
                     onSyncBookmarks: () => unawaited(_syncBookmarks()),
                     onAiSuggest: () => unawaited(_handleAiSuggest()),
+                    onBackfillNotes: () => unawaited(_handleBackfillNotes()),
                     onOpenSettings: _openSettings,
                       );
                     },
@@ -2001,7 +2177,7 @@ class _HomePageState extends State<HomePage> {
   Widget? _buildStatusTrailing(AppStrings strings) {
     if (_undo != null) {
       return TextButton(
-        onPressed: () => unawaited(_undoOrder()),
+        onPressed: () => unawaited(_undoPressed()),
         style: TextButton.styleFrom(
           minimumSize: const Size(0, 24),
           padding: const EdgeInsets.symmetric(horizontal: 8),

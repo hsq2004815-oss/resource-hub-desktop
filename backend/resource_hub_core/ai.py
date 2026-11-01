@@ -195,23 +195,51 @@ class AiItem:
     name: str
     target: str
     kind: str = "link"
+    #: The category the entry already has, when there is one. The backfill never
+    #: changes it; it is sent so the note matches the row's own label.
+    category: str = ""
+    #: Names of a folder's direct children (Phase 30). Names only, never their
+    #: contents or their full paths, and only when the note needs context.
+    children: Sequence[str] = ()
 
 
-def _system_prompt(existing_categories: Sequence[str]) -> str:
+def _system_prompt(
+    existing_categories: Sequence[str],
+    language: str = "zh",
+    want_notes: bool = False,
+    want_reasons: bool = True,
+) -> str:
     """Instructions for the model: strict JSON only, prefer known categories."""
     if existing_categories:
         categories = ", ".join(existing_categories)
     else:
         categories = "(none yet)"
+    note_language = "English" if language == "en" else "Simplified Chinese"
+    note_rules = (
+        f"Also write one short note (at most 40 characters) saying what the "
+        f"item is for. The note MUST be written in {note_language}, even when "
+        "the item's name or URL is in another language. Use only what the "
+        "entry itself suggests; if the name and context say nothing, use an "
+        "empty string for the note - never a placeholder such as \"N/A\" or "
+        "its translation. "
+        if want_notes
+        else ""
+    )
+    fields = ['"id": "<input id>"', '"category": "<category>"']
+    if want_notes:
+        fields.append('"note": "<short note>"')
+    if want_reasons:
+        fields.append('"reason": "<short reason, at most 200 characters>"')
+    element = "{" + ", ".join(fields) + "}"
     return (
         "You categorise saved links and folders for a personal resource manager. "
         f"The user's existing categories are: {categories}. "
         "For every input item choose exactly one category: 1-3 words, at most "
         "40 characters. Prefer an existing category when it fits; otherwise "
         "propose a new, short category. "
-        "Reply with ONLY a JSON array, without prose or markdown fences. Each "
-        'element must be an object like {"id": "<input id>", "category": '
-        '"<category>", "reason": "<short reason, at most 200 characters>"}. '
+        + note_rules
+        + "Reply with ONLY a JSON array, without prose or markdown fences. Each "
+        f"element must be an object like {element}. "
         "Return one object per input item and use every input id exactly once."
     )
 
@@ -223,6 +251,8 @@ def _payload_item(item: AiItem) -> dict[str, Any]:
         "kind": item.kind,
         "name": item.name,
     }
+    if item.category:
+        entry["category"] = item.category
     if item.mode == "links":
         # A link needs its URL to be categorised; that is what the user keeps
         # in the app already.
@@ -232,6 +262,10 @@ def _payload_item(item: AiItem) -> dict[str, Any]:
         parent = Path(item.target).parent.name
         if parent:
             entry["parent"] = parent
+        if item.children:
+            # Phase 30: a folder's own name rarely says what it is for, so a
+            # handful of child *names* give the note something to stand on.
+            entry["children"] = list(item.children)
     return entry
 
 
@@ -299,6 +333,9 @@ class AiClient:
         self,
         items: Sequence[AiItem],
         existing_categories: Sequence[str],
+        language: str = "zh",
+        want_notes: bool = False,
+        want_reasons: bool = True,
     ) -> dict[str, Any]:
         """POST one completion request. Returns ``{"model", "suggestions"}``.
 
@@ -312,7 +349,9 @@ class AiClient:
             "messages": [
                 {
                     "role": "system",
-                    "content": _system_prompt(existing_categories),
+                    "content": _system_prompt(
+                        existing_categories, language, want_notes, want_reasons
+                    ),
                 },
                 {
                     "role": "user",
@@ -322,7 +361,9 @@ class AiClient:
                 },
             ],
             "temperature": 0.1,
-            "max_tokens": 1500,
+            # A batch of 20 rows with a short note each fits comfortably; the
+            # old 1500 truncated a 40-row reply and silently lost the batch.
+            "max_tokens": 4000,
         }
         reply = self._post(body)
         return {

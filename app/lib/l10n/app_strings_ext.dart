@@ -67,6 +67,16 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
     'settings_quick_hint': '只弹出树状图，不打开完整窗口。'
         '按一次打开网站树，再按一次切到文件夹树；面板内也可以按 Tab 切换。',
     'settings_quick_panel': '快速面板',
+    'ai_categorized': 'AI 已自动分类 {0} 条',
+    'ai_categorized_undone': '已撤销 AI 分类（{0} 条）',
+    'ai_backfill_notes': 'AI 补全备注',
+    'ai_backfill_started': 'AI 正在补备注（共 {0} 条）',
+    'ai_backfill_progress': 'AI 正在补备注（{0}/{1}）',
+    'ai_backfill_done': 'AI 补了 {0} 条备注',
+    'ai_backfill_partial': 'AI 补了 {0} 条备注，部分失败',
+    'ai_backfill_failed': 'AI 补备注失败，检查网络或 API Key',
+    'ai_backfill_empty': '没有需要补备注的条目',
+    'ai_backfill_undone': '已撤销 AI 备注（{0} 条）',
     'settings_mouse_side_buttons': '鼠标侧键',
     'settings_mouse_side_buttons_hint': '后侧键打开网站面板，前侧键打开文件夹面板；'
         '开启后会接管鼠标的后退 / 前进键。',
@@ -213,6 +223,16 @@ const Map<String, Map<String, String>> kAppOnlyStrings =
         'Press once for sites, again for folders; Tab also switches inside '
         'the panel.',
     'settings_quick_panel': 'Quick panel',
+    'ai_categorized': 'AI categorized {0} item(s)',
+    'ai_categorized_undone': 'Reverted AI categorization ({0} item(s))',
+    'ai_backfill_notes': 'AI fills in notes',
+    'ai_backfill_started': 'AI is filling {0} note(s)…',
+    'ai_backfill_progress': 'AI is filling notes ({0}/{1})',
+    'ai_backfill_done': 'AI wrote {0} note(s)',
+    'ai_backfill_partial': 'AI wrote {0} note(s), some failed',
+    'ai_backfill_failed': 'AI could not fill notes; check the network or API key',
+    'ai_backfill_empty': 'Nothing needs a note',
+    'ai_backfill_undone': 'Reverted AI notes ({0} item(s))',
     'settings_mouse_side_buttons': 'Mouse side buttons',
     'settings_mouse_side_buttons_hint':
         'Back button opens the web links panel, forward opens the folders '

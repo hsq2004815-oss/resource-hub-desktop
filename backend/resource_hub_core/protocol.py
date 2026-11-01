@@ -38,17 +38,18 @@ from __future__ import annotations
 import json
 import sys
 import threading
+import time
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, IO, Mapping
+from typing import Any, Callable, IO, Iterable, Mapping
 
 from .ai import AI_KEY_FILENAME, AiClient, AiError, AiItem, AiKeyStore, AiKeyStoreError
 from .bookmark_bridge import BookmarkBridge
 from .bookmarks import BookmarkSyncEngine, BookmarkWatcher, dedup_key
 from .favicons import FaviconStore
 from .browsers import find_browser, installed_browsers
-from .fs import list_children, open_fs_path, reveal_fs_path
+from .fs import FsError, list_children, open_fs_path, reveal_fs_path
 from .hotkey import GlobalHotkeyListener, is_combination_available
 from .launcher import open_link, open_path, reveal_path
 from .mousehook import MouseSideButtonListener
@@ -69,6 +70,32 @@ PROTOCOL_VERSION = 1
 #: synchronous request (and its token cost) bounded.
 AI_SUGGESTION_LIMIT_DEFAULT = 40
 AI_SUGGESTION_LIMIT_MAX = 60
+
+#: Phase 29 — automatic tagging. A burst of adds (a dropped folder set, a
+#: bookmark import) is coalesced into one request after this pause, and each
+#: run may introduce at most this many *new* category names so one pass cannot
+#: explode the taxonomy with near-duplicates.
+AI_AUTOTAG_DEBOUNCE_SECONDS = 0.6
+AI_AUTOTAG_MAX_NEW_CATEGORIES = 2
+#: Phase 30: generated notes are one short line so they read in the list column.
+AI_AUTOTAG_NOTE_MAX = 40
+#: How many child names of a folder are offered as context for its note.
+AI_AUTOTAG_CHILD_NAMES = 8
+#: Models answer "no note" with a word instead of an empty string; treat those
+#: as empty so a row does not end up with a useless note like "无".
+_EMPTY_NOTE_WORDS = frozenset(
+    {"", "无", "没有", "未知", "无备注", "n/a", "na", "none", "null", "-", "—"}
+)
+
+
+def _clean_note(text: str) -> str:
+    """One line, clipped, with placeholder answers collapsed to empty."""
+    clean = " ".join(text.split())[:AI_AUTOTAG_NOTE_MAX]
+    return "" if clean.strip().lower() in _EMPTY_NOTE_WORDS else clean
+#: Phase 31: one backfill request carries at most this many rows. Kept small:
+#: a 40-row reply overran the model's output budget and the whole batch was
+#: lost (the truncated JSON has no closing bracket).
+AI_BACKFILL_BATCH = 20
 
 #: Error codes the client can branch on. ``key`` (when present) is an i18n key
 #: from the legacy string table; ``detail`` is for logs, not for users.
@@ -173,6 +200,18 @@ class Dispatcher:
         self._favicon_lock = threading.Lock()
         self._favicon_pending: list[str] = []
         self._favicon_thread: threading.Thread | None = None
+        # Phase 29: items queued for automatic tagging, drained by one thread.
+        self._ai_lock = threading.Lock()
+        self._ai_pending: list[tuple[str, str]] = []
+        self._ai_thread: threading.Thread | None = None
+        #: Undo snapshot of the last automatic run — (mode, id, wrote a note);
+        #: guarded by bookmark_lock because the dispatcher and the worker both
+        #: touch the service.
+        self._ai_undo: list[tuple[str, str, bool]] | None = None
+        #: Target list of the notes-only backfill (Phase 31) and the rows it
+        #: wrote, so its undo can clear notes without touching categories.
+        self._ai_backfill_targets: list[tuple[str, str]] | None = None
+        self._ai_note_undo: list[tuple[str, str]] | None = None
         self._handlers: dict[str, Callable[[Mapping[str, Any]], dict[str, Any]]] = {
             "app.hello": self._hello,
             "app.shutdown": self._shutdown,
@@ -186,6 +225,9 @@ class Dispatcher:
             "ai.status": self._ai_status,
             "ai.setKey": self._ai_set_key,
             "ai.suggestCategories": self._ai_suggest_categories,
+            "ai.undoCategorize": self._ai_undo_categorize,
+            "ai.backfill": self._ai_backfill,
+            "ai.undoNotes": self._ai_undo_notes,
             "resources.list": self._list,
             "resources.add": self._add,
             "resources.update": self._update,
@@ -318,9 +360,429 @@ class Dispatcher:
             except Exception:  # noqa: BLE001 - a failed icon fetch is harmless
                 pass
 
+    # -- automatic AI tagging (Phase 29) -----------------------------------
+    def _kick_ai(self, entries: Iterable[tuple[str, str]]) -> None:
+        """Queue freshly added, still-uncategorized items for background tagging.
+
+        A no-op when the feature is off or no key is stored, so adding a
+        resource never depends on the AI endpoint being reachable.
+        """
+        if not self.state.settings.ai_enabled:
+            return
+        if not self.state.ai_key_store.has_key():
+            return
+        queued = [entry for entry in entries if entry[1]]
+        if not queued:
+            return
+        with self._ai_lock:
+            self._ai_pending.extend(queued)
+            if self._ai_thread is not None and self._ai_thread.is_alive():
+                return
+            self._ai_thread = threading.Thread(
+                target=self._ai_worker,
+                name="ai-autotag",
+                daemon=True,
+            )
+            self._ai_thread.start()
+
+    def _ai_worker(self) -> None:
+        # A burst of adds (drop a folder set, import bookmarks) must become one
+        # request, so the first drain waits for the queue to settle.
+        time.sleep(AI_AUTOTAG_DEBOUNCE_SECONDS)
+        while True:
+            with self._ai_lock:
+                pending = list(dict.fromkeys(self._ai_pending))
+                self._ai_pending.clear()
+                if not pending:
+                    self._ai_thread = None
+                    return
+            try:
+                self._tag_batch(pending)
+            except Exception:  # noqa: BLE001 - tagging is best effort
+                pass
+
+    def _tag_batch(self, entries: list[tuple[str, str]]) -> None:
+        """Ask the model for one batch and write the answer straight in."""
+        settings = self.state.settings
+        api_key = self.state.ai_key_store.load()
+        if not api_key or not settings.ai_enabled:
+            return
+        # The service is single-threaded: read and write under the protocol
+        # lock, but keep the HTTP round-trip outside it.
+        with self.state.bookmark_lock:
+            batch: list[tuple[str, Resource]] = []
+            for mode, item_id in entries:
+                try:
+                    item = self.state.service.get(mode, item_id)
+                except NotFoundError:
+                    continue
+                if item.category != UNCATEGORIZED:
+                    continue
+                batch.append((mode, item))
+            if not batch:
+                return
+            existing = {
+                category
+                for mode in ("links", "folders")
+                for category in self.state.service.categories(mode)
+            }
+
+        items = [
+            AiItem(
+                mode=mode,
+                id=item.id,
+                name=item.name,
+                target=item.target,
+                kind="link"
+                if mode == "links"
+                else str(getattr(item, "kind", "folder")),
+                children=self._child_names(mode, item),
+            )
+            for mode, item in batch
+        ]
+        client = AiClient(settings.ai_base_url, settings.ai_model, api_key)
+        reply = client.suggest_categories(
+            items, sorted(existing), settings.language, want_notes=True
+        )
+        raw = reply.get('suggestions') if isinstance(reply, Mapping) else None
+        if not isinstance(raw, list):
+            return
+
+        with self.state.bookmark_lock:
+            applied, created = self._apply_ai_categories(raw, batch, existing)
+        if applied:
+            # The window refreshes from this; a failed run stays silent.
+            self.writer.event(
+                "ai.categorized",
+                {"applied": applied, "newCategories": created},
+            )
+
+    def _ai_backfill(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        """Start a notes-only pass over every resource that has none."""
+        settings = self.state.settings
+        if not settings.ai_enabled:
+            raise ProtocolError(
+                "ai_disabled", "AI category suggestions are disabled in settings"
+            )
+        if not self.state.ai_key_store.has_key():
+            raise ProtocolError(
+                "ai_not_configured", "no AI API key is configured"
+            )
+        with self.state.bookmark_lock:
+            targets = [
+                (mode, item.id)
+                for mode in ("links", "folders")
+                for item in self.state.service.items(mode)
+                if not item.note.strip()
+            ]
+        if not targets:
+            return {"total": 0}
+        with self._ai_lock:
+            if self._ai_thread is not None and self._ai_thread.is_alive():
+                raise ProtocolError(
+                    "ai_busy", "another AI run is still in progress"
+                )
+            self._ai_backfill_targets = targets
+            self._ai_thread = threading.Thread(
+                target=self._backfill_worker,
+                name="ai-backfill",
+                daemon=True,
+            )
+            self._ai_thread.start()
+        return {"total": len(targets)}
+
+    def _backfill_worker(self) -> None:
+        targets = self._ai_backfill_targets or []
+        written = 0
+        failed = False
+        try:
+            for start in range(0, len(targets), AI_BACKFILL_BATCH):
+                chunk = targets[start : start + AI_BACKFILL_BATCH]
+                try:
+                    written += self._tag_notes(chunk)
+                except Exception:  # noqa: BLE001 - one bad batch must not stop
+                    failed = True
+                self.writer.event(
+                    "ai.backfillProgress",
+                    {
+                        "done": min(start + len(chunk), len(targets)),
+                        "total": len(targets),
+                    },
+                )
+        finally:
+            self._ai_backfill_targets = None
+            with self._ai_lock:
+                self._ai_thread = None
+                # Adds that arrived during the run still deserve their pass.
+                pending = list(dict.fromkeys(self._ai_pending))
+                self._ai_pending.clear()
+            self.writer.event(
+                "ai.backfillDone", {"written": written, "failed": failed}
+            )
+            if pending:
+                self._kick_ai(pending)
+
+    def _tag_notes(self, entries: list[tuple[str, str]]) -> int:
+        """One request for a slice of the backfill; notes only, no categories."""
+        settings = self.state.settings
+        api_key = self.state.ai_key_store.load()
+        if not api_key or not settings.ai_enabled:
+            return 0
+        with self.state.bookmark_lock:
+            batch: list[tuple[str, Resource]] = []
+            for mode, item_id in entries:
+                try:
+                    item = self.state.service.get(mode, item_id)
+                except NotFoundError:
+                    continue
+                if item.note.strip():
+                    continue
+                batch.append((mode, item))
+            if not batch:
+                return 0
+            existing = {
+                category
+                for mode in ("links", "folders")
+                for category in self.state.service.categories(mode)
+            }
+        items = [
+            AiItem(
+                mode=mode,
+                id=item.id,
+                name=item.name,
+                target=item.target,
+                kind="link"
+                if mode == "links"
+                else str(getattr(item, "kind", "folder")),
+                category=""
+                if item.category == UNCATEGORIZED
+                else item.category,
+                children=self._child_names(mode, item),
+            )
+            for mode, item in batch
+        ]
+        client = AiClient(settings.ai_base_url, settings.ai_model, api_key)
+        reply = client.suggest_categories(
+            items,
+            sorted(existing),
+            settings.language,
+            want_notes=True,
+            # The backfill discards reasons, so do not pay for them: they were
+            # most of the reply and the reason a batch overran its budget.
+            want_reasons=False,
+        )
+        raw = reply.get('suggestions') if isinstance(reply, Mapping) else None
+        if not isinstance(raw, list):
+            return 0
+        with self.state.bookmark_lock:
+            return self._apply_notes(raw, batch)
+
+    def _apply_notes(
+        self,
+        raw_suggestions: list[Any],
+        batch: list[tuple[str, Resource]],
+    ) -> int:
+        """Write only the notes; every category stays exactly as it was."""
+        sent = {item.id: mode for mode, item in batch}
+        seen: set[str] = set()
+        snapshot: list[tuple[str, str]] = []
+        for raw in raw_suggestions:
+            if not isinstance(raw, Mapping):
+                continue
+            item_id = raw.get('id')
+            if not isinstance(item_id, str) or item_id in seen:
+                continue
+            mode = sent.get(item_id)
+            if mode is None:
+                continue
+            text = raw.get('note')
+            if not isinstance(text, str):
+                continue
+            clean = _clean_note(text)
+            if not clean:
+                continue
+            try:
+                current = self.state.service.get(mode, item_id)
+            except NotFoundError:
+                continue
+            if current.note.strip():
+                continue
+            self.state.service.update(
+                mode,
+                item_id,
+                name=current.name,
+                target=current.target,
+                category=current.category,
+                note=clean,
+            )
+            seen.add(item_id)
+            snapshot.append((mode, item_id))
+        if snapshot:
+            self._ai_note_undo = snapshot
+        return len(snapshot)
+
+    def _ai_undo_notes(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        """Clear the notes the last backfill wrote; categories are untouched."""
+        snapshot = self._ai_note_undo
+        if not snapshot:
+            return {"restored": 0}
+        restored = 0
+        for mode, item_id in snapshot:
+            try:
+                current = self.state.service.get(mode, item_id)
+            except NotFoundError:
+                continue
+            self.state.service.update(
+                mode,
+                item_id,
+                name=current.name,
+                target=current.target,
+                category=current.category,
+                note="",
+            )
+            restored += 1
+        self._ai_note_undo = None
+        return {"restored": restored}
+
+    @staticmethod
+    def _generated_note(
+        raw: Mapping[str, Any], current: str
+    ) -> tuple[str, bool]:
+        """The note to store plus whether it replaced an empty one.
+
+        A note the user wrote is never overwritten, so only rows with a blank
+        note can receive one.
+        """
+        if current.strip():
+            return current, False
+        text = raw.get("note")
+        if not isinstance(text, str):
+            return current, False
+        clean = _clean_note(text)
+        return (clean, True) if clean else (current, False)
+
+    @staticmethod
+    def _child_names(mode: str, item: Resource) -> list[str]:
+        """Direct child *names* of a folder, used only to ground its note.
+
+        Names only: no sizes, no paths, no file contents. A missing or
+        unreadable folder simply yields no context.
+        """
+        if mode == "links" or str(getattr(item, "kind", "folder")) != "folder":
+            return []
+        try:
+            listing = list_children(item.target)
+        except (FsError, OSError):
+            return []
+        return [entry.name for entry in listing.entries][:AI_AUTOTAG_CHILD_NAMES]
+
+    def _apply_ai_categories(
+        self,
+        raw_suggestions: list[Any],
+        batch: list[tuple[str, Resource]],
+        existing: set[str],
+    ) -> tuple[int, list[str]]:
+        """Write validated suggestions directly, returning what was applied.
+
+        Same contract as _validate_suggestions (the id must have been sent
+        and the item must still be uncategorized) plus the cap on new
+        category names per run.
+        """
+        sent = {item.id: mode for mode, item in batch}
+        used_new: set[str] = set()
+        seen: set[str] = set()
+        snapshot: list[tuple[str, str]] = []
+        for raw in raw_suggestions:
+            if not isinstance(raw, Mapping):
+                continue
+            item_id = raw.get('id')
+            if not isinstance(item_id, str) or item_id in seen:
+                continue
+            mode = sent.get(item_id)
+            if mode is None:
+                continue
+            category = raw.get('category')
+            if not isinstance(category, str):
+                continue
+            clean = category.strip()
+            if not clean or clean == UNCATEGORIZED or len(clean) > 40:
+                continue
+            is_new = clean not in existing
+            if (
+                is_new
+                and clean not in used_new
+                and len(used_new) >= AI_AUTOTAG_MAX_NEW_CATEGORIES
+            ):
+                continue
+            try:
+                current = self.state.service.get(mode, item_id)
+            except NotFoundError:
+                continue
+            if current.category != UNCATEGORIZED:
+                continue
+            note, note_written = self._generated_note(raw, current.note)
+            self.state.service.update(
+                mode,
+                item_id,
+                name=current.name,
+                target=current.target,
+                category=clean,
+                note=note,
+            )
+            seen.add(item_id)
+            snapshot.append((mode, item_id, note_written))
+            if is_new:
+                used_new.add(clean)
+        if snapshot:
+            self._ai_undo = snapshot
+        return len(snapshot), sorted(used_new)
+
+    def _ai_undo_categorize(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        """Take back the last automatic run (the status bar undo)."""
+        snapshot = self._ai_undo
+        if not snapshot:
+            return {"restored": 0}
+        restored = 0
+        for mode, item_id, note_written in snapshot:
+            try:
+                current = self.state.service.get(mode, item_id)
+            except NotFoundError:
+                continue
+            self.state.service.update(
+                mode,
+                item_id,
+                name=current.name,
+                target=current.target,
+                category=None,
+                note="" if note_written else current.note,
+            )
+            restored += 1
+        self._ai_undo = None
+        return {"restored": restored}
+
+    @staticmethod
+    def _known_ids(service: ResourceService) -> dict[str, set[str]]:
+        return {
+            mode: {item.id for item in service.items(mode)}
+            for mode in ("links", "folders")
+        }
+
+    @staticmethod
+    def _new_uncategorized(
+        service: ResourceService, before: Mapping[str, set[str]]
+    ) -> list[tuple[str, str]]:
+        """Items that appeared since the snapshot and still have no category."""
+        return [
+            (mode, item.id)
+            for mode in ("links", "folders")
+            for item in service.items(mode)
+            if item.id not in before[mode] and item.category == UNCATEGORIZED
+        ]
+
     def _bookmarks_sync(self, params: Mapping[str, Any]) -> dict[str, Any]:
         self._require_loaded()
         with self.state.bookmark_lock:
+            before = self._known_ids(self.state.service)
             result = self.state.bookmark_engine.sync(
                 self.state.service, self.state.settings
             )
@@ -328,6 +790,8 @@ class Dispatcher:
             # The response already carries the result; the event keeps every
             # open window consistent, including one that did not send the call.
             self.writer.event("bookmarks", bookmark_event_payload(result))
+            # Phase 29: an import is exactly when bulk tagging pays off.
+            self._kick_ai(self._new_uncategorized(self.state.service, before))
         return result
 
     def _bookmarks_extension_status(
@@ -603,6 +1067,8 @@ class Dispatcher:
             note=str(params.get("note") or ""),
             browser=str(params.get("browser") or ""),
         )
+        if item.category == UNCATEGORIZED:
+            self._kick_ai([(mode, item.id)])
         return {"item": item.to_json()}
 
     def _update(self, params: Mapping[str, Any]) -> dict[str, Any]:
@@ -720,7 +1186,9 @@ class Dispatcher:
         paths = params.get("paths")
         if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
             raise ProtocolError("bad_request", "params.paths must be an array of strings")
+        before = self._known_ids(self.state.service)
         result = self.state.service.add_dropped(paths)
+        self._kick_ai(self._new_uncategorized(self.state.service, before))
         return {
             "added": result.added,
             "skipped": result.skipped,

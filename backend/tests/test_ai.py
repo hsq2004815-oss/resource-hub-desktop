@@ -24,12 +24,15 @@ from resource_hub_core.ai import (
     AiItem,
     AiKeyStore,
     AiKeyStoreError,
+    _payload_item,
+    _system_prompt,
 )
 from resource_hub_core.bookmarks import BROWSER_DATA_DIRS_ENV
 from resource_hub_core.models import UNCATEGORIZED
 from resource_hub_core.protocol import (
     AI_SUGGESTION_LIMIT_DEFAULT,
     JsonLinesServer,
+    ProtocolError,
 )
 
 WINDOWS_ONLY = unittest.skipUnless(
@@ -130,7 +133,7 @@ class AiClientTests(unittest.TestCase):
         body = json.loads(request.data.decode("utf-8"))
         self.assertEqual(body["model"], "deepseek-chat")
         self.assertEqual(body["temperature"], 0.1)
-        self.assertEqual(body["max_tokens"], 1500)
+        self.assertEqual(body["max_tokens"], 4000)
         system = body["messages"][0]
         self.assertEqual(system["role"], "system")
         self.assertIn("Development, Tools", system["content"])
@@ -469,7 +472,12 @@ class AiProtocolTestCase(unittest.TestCase):
 class AiStatusProtocolTests(AiProtocolTestCase):
     def test_hello_lists_the_ai_methods(self) -> None:
         methods = self.call("app.hello")["result"]["methods"]
-        for method in ("ai.status", "ai.setKey", "ai.suggestCategories"):
+        for method in (
+            "ai.status",
+            "ai.setKey",
+            "ai.suggestCategories",
+            "ai.undoCategorize",
+        ):
             self.assertIn(method, methods)
         self.assertEqual(methods, sorted(methods))
 
@@ -840,6 +848,459 @@ class AiSuggestProtocolTests(AiProtocolTestCase):
         payload = json.dumps(frame, ensure_ascii=False)
         self.assertNotIn(TEST_KEY, payload)
         self.assertEqual(frame["error"]["code"], "ai_request_failed")
+
+
+class AiAutoTagTests(AiProtocolTestCase):
+    """Phase 29: the backend tags newly added rows on its own."""
+
+    def _server(self) -> Any:
+        out = io.StringIO()
+        server = JsonLinesServer(
+            self.dir, in_stream=io.StringIO(""), out_stream=out
+        )
+        self.addCleanup(server._shutdown)
+        server.dispatcher.dispatch("settings.set", {"settings": {"aiEnabled": True}})
+        server.dispatcher.dispatch("ai.setKey", {"apiKey": TEST_KEY})
+        return server
+
+    @staticmethod
+    def _add(server: Any, name: str, url: str) -> dict[str, Any]:
+        return server.dispatcher.dispatch(
+            "resources.add", {"mode": "links", "name": name, "target": url}
+        )["item"]
+
+    @staticmethod
+    def _categories(server: Any) -> dict[str, str]:
+        items = server.dispatcher.dispatch("resources.list", {"mode": "links"})[
+            "items"
+        ]
+        return {item["id"]: item["category"] for item in items}
+
+    def _run_tag(self, server: Any, reply: dict[str, Any], ids: list[str]) -> None:
+        """Drive one batch directly so no worker thread touches the network."""
+        with mock.patch("resource_hub_core.protocol.AiClient") as client_cls:
+            client_cls.return_value.suggest_categories.return_value = reply
+            server.dispatcher._tag_batch([("links", item_id) for item_id in ids])
+
+    def test_add_queues_only_uncategorized_items(self) -> None:
+        server = self._server()
+        with mock.patch.object(type(server.dispatcher), "_kick_ai") as kick:
+            item = self._add(server, "A", "https://a.test")
+            self.assertEqual(kick.call_args.args[0], [("links", item["id"])])
+            kick.reset_mock()
+            server.dispatcher.dispatch(
+                "resources.add",
+                {
+                    "mode": "links",
+                    "name": "B",
+                    "target": "https://b.test",
+                    "category": "Work",
+                },
+            )
+            kick.assert_not_called()
+
+    def test_drop_queues_the_items_it_added(self) -> None:
+        server = self._server()
+        target = self.dir / "dropped.txt"
+        target.write_text("x", encoding="utf-8")
+        with mock.patch.object(type(server.dispatcher), "_kick_ai") as kick:
+            server.dispatcher.dispatch("resources.drop", {"paths": [str(target)]})
+        queued = kick.call_args.args[0]
+        self.assertEqual(len(queued), 1)
+        self.assertEqual(queued[0][0], "folders")
+
+    def test_kick_is_a_noop_without_a_key(self) -> None:
+        server = self._server()
+        server.dispatcher.dispatch("ai.setKey", {"apiKey": ""})
+        server.dispatcher._kick_ai([("links", "missing")])
+        self.assertEqual(server.dispatcher._ai_pending, [])
+        self.assertIsNone(server.dispatcher._ai_thread)
+
+    def test_batch_writes_the_suggested_categories(self) -> None:
+        server = self._server()
+        with mock.patch.object(type(server.dispatcher), "_kick_ai"):
+            first = self._add(server, "A", "https://a.test")
+            second = self._add(server, "B", "https://b.test")
+        self._run_tag(
+            server,
+            {
+                "suggestions": [
+                    {"id": first["id"], "category": "Work"},
+                    {"id": second["id"], "category": "AI"},
+                ]
+            },
+            [first["id"], second["id"]],
+        )
+        categories = self._categories(server)
+        self.assertEqual(categories[first["id"]], "Work")
+        self.assertEqual(categories[second["id"]], "AI")
+
+    def test_at_most_two_new_categories_per_run(self) -> None:
+        server = self._server()
+        with mock.patch.object(type(server.dispatcher), "_kick_ai"):
+            ids = [
+                self._add(server, f"item{i}", f"https://i{i}.test")["id"]
+                for i in range(3)
+            ]
+        self._run_tag(
+            server,
+            {
+                "suggestions": [
+                    {"id": ids[0], "category": "Alpha"},
+                    {"id": ids[1], "category": "Beta"},
+                    {"id": ids[2], "category": "Gamma"},
+                ]
+            },
+            ids,
+        )
+        categories = self._categories(server)
+        self.assertEqual(categories[ids[0]], "Alpha")
+        self.assertEqual(categories[ids[1]], "Beta")
+        self.assertEqual(categories[ids[2]], UNCATEGORIZED)
+
+    def test_an_existing_category_does_not_count_against_the_cap(self) -> None:
+        server = self._server()
+        with mock.patch.object(type(server.dispatcher), "_kick_ai"):
+            server.dispatcher.dispatch(
+                "resources.add",
+                {
+                    "mode": "links",
+                    "name": "Seed",
+                    "target": "https://seed.test",
+                    "category": "Work",
+                },
+            )
+            ids = [
+                self._add(server, f"item{i}", f"https://j{i}.test")["id"]
+                for i in range(3)
+            ]
+        self._run_tag(
+            server,
+            {
+                "suggestions": [
+                    {"id": ids[0], "category": "Alpha"},
+                    {"id": ids[1], "category": "Beta"},
+                    {"id": ids[2], "category": "Work"},
+                ]
+            },
+            ids,
+        )
+        categories = self._categories(server)
+        self.assertEqual(categories[ids[0]], "Alpha")
+        self.assertEqual(categories[ids[1]], "Beta")
+        self.assertEqual(categories[ids[2]], "Work")
+
+    @staticmethod
+    def _field(server: Any, mode: str, item_id: str, field: str) -> str:
+        items = server.dispatcher.dispatch("resources.list", {"mode": mode})[
+            "items"
+        ]
+        return next(i for i in items if i["id"] == item_id)[field]
+
+    def test_a_generated_note_fills_a_blank_one(self) -> None:
+        server = self._server()
+        with mock.patch.object(type(server.dispatcher), "_kick_ai"):
+            item = self._add(server, "A", "https://a.test")
+        self._run_tag(
+            server,
+            {
+                "suggestions": [
+                    {"id": item["id"], "category": "Work", "note": "团队代码托管"}
+                ]
+            },
+            [item["id"]],
+        )
+        self.assertEqual(
+            self._field(server, "links", item["id"], "note"), "团队代码托管"
+        )
+
+    def test_a_note_the_user_wrote_is_never_overwritten(self) -> None:
+        server = self._server()
+        with mock.patch.object(type(server.dispatcher), "_kick_ai"):
+            item = self._add(server, "A", "https://a.test")
+        server.dispatcher.dispatch(
+            "resources.update",
+            {
+                "mode": "links",
+                "id": item["id"],
+                "name": "A",
+                "target": "https://a.test",
+                "note": "我自己写的",
+            },
+        )
+        self._run_tag(
+            server,
+            {
+                "suggestions": [
+                    {"id": item["id"], "category": "Work", "note": "AI 写的"}
+                ]
+            },
+            [item["id"]],
+        )
+        self.assertEqual(
+            self._field(server, "links", item["id"], "note"), "我自己写的"
+        )
+
+    def test_generated_note_is_clipped_to_forty_characters(self) -> None:
+        server = self._server()
+        with mock.patch.object(type(server.dispatcher), "_kick_ai"):
+            item = self._add(server, "A", "https://a.test")
+        self._run_tag(
+            server,
+            {
+                "suggestions": [
+                    {
+                        "id": item["id"],
+                        "category": "Work",
+                        "note": "很长的描述" * 20,
+                    }
+                ]
+            },
+            [item["id"]],
+        )
+        self.assertEqual(len(self._field(server, "links", item["id"], "note")), 40)
+
+    def test_a_placeholder_answer_is_treated_as_no_note(self) -> None:
+        server = self._server()
+        for word in ("无", "N/A", "none", "-"):
+            with self.subTest(word=word):
+                with mock.patch.object(type(server.dispatcher), "_kick_ai"):
+                    item = self._add(server, word, f"https://{word}.test")
+                written = self._run_notes(
+                    server,
+                    {"suggestions": [{"id": item["id"], "note": word}]},
+                    [item["id"]],
+                )
+                self.assertEqual(written, 0)
+                self.assertEqual(self._field(server, "links", item["id"], "note"), "")
+
+    def test_an_empty_note_leaves_the_field_blank(self) -> None:
+        server = self._server()
+        with mock.patch.object(type(server.dispatcher), "_kick_ai"):
+            item = self._add(server, "A", "https://a.test")
+        self._run_tag(
+            server,
+            {
+                "suggestions": [
+                    {"id": item["id"], "category": "Work", "note": ""}
+                ]
+            },
+            [item["id"]],
+        )
+        self.assertEqual(self._field(server, "links", item["id"], "note"), "")
+
+    def test_undo_clears_the_generated_note(self) -> None:
+        server = self._server()
+        with mock.patch.object(type(server.dispatcher), "_kick_ai"):
+            item = self._add(server, "A", "https://a.test")
+        self._run_tag(
+            server,
+            {
+                "suggestions": [
+                    {"id": item["id"], "category": "Work", "note": "AI 写的"}
+                ]
+            },
+            [item["id"]],
+        )
+        server.dispatcher.dispatch("ai.undoCategorize", {})
+        self.assertEqual(self._field(server, "links", item["id"], "note"), "")
+        self.assertEqual(
+            self._field(server, "links", item["id"], "category"), UNCATEGORIZED
+        )
+
+    def test_folder_children_are_offered_as_context(self) -> None:
+        server = self._server()
+        folder = self.dir / "proj"
+        folder.mkdir()
+        (folder / "a.txt").write_text("x", encoding="utf-8")
+        (folder / "b.txt").write_text("x", encoding="utf-8")
+        with mock.patch.object(type(server.dispatcher), "_kick_ai"):
+            added = server.dispatcher.dispatch(
+                "resources.add",
+                {"mode": "folders", "name": "proj", "target": str(folder)},
+            )["item"]
+        with mock.patch("resource_hub_core.protocol.AiClient") as client_cls:
+            client_cls.return_value.suggest_categories.return_value = {
+                "suggestions": []
+            }
+            server.dispatcher._tag_batch([("folders", added["id"])])
+        call = client_cls.return_value.suggest_categories.call_args
+        self.assertEqual(call.args[0][0].children, ["a.txt", "b.txt"])
+        self.assertEqual(call.args[2], "zh")
+        self.assertTrue(call.kwargs["want_notes"])
+
+    def _seed_categorized_row(self, server: Any) -> dict[str, Any]:
+        """A row the user already filed under 工作, with no note."""
+        with mock.patch.object(type(server.dispatcher), "_kick_ai"):
+            item = self._add(server, "A", "https://a.test")
+        server.dispatcher.dispatch(
+            "resources.update",
+            {
+                "mode": "links",
+                "id": item["id"],
+                "name": "A",
+                "target": "https://a.test",
+                "category": "工作",
+            },
+        )
+        return item
+
+    def _run_notes(self, server: Any, reply: dict[str, Any], ids: list[str]) -> int:
+        with mock.patch("resource_hub_core.protocol.AiClient") as client_cls:
+            client_cls.return_value.suggest_categories.return_value = reply
+            return server.dispatcher._tag_notes(
+                [("links", item_id) for item_id in ids]
+            )
+
+    def test_backfill_writes_a_note_without_touching_the_category(self) -> None:
+        server = self._server()
+        item = self._seed_categorized_row(server)
+        written = self._run_notes(
+            server,
+            {
+                "suggestions": [
+                    {"id": item["id"], "category": "AI", "note": "团队代码托管"}
+                ]
+            },
+            [item["id"]],
+        )
+        self.assertEqual(written, 1)
+        self.assertEqual(
+            self._field(server, "links", item["id"], "note"), "团队代码托管"
+        )
+        # The model suggested "AI"; the row must keep the user's 工作.
+        self.assertEqual(
+            self._field(server, "links", item["id"], "category"), "工作"
+        )
+
+    def test_backfill_skips_rows_that_already_have_a_note(self) -> None:
+        server = self._server()
+        with mock.patch.object(type(server.dispatcher), "_kick_ai"):
+            item = self._add(server, "A", "https://a.test")
+        server.dispatcher.dispatch(
+            "resources.update",
+            {
+                "mode": "links",
+                "id": item["id"],
+                "name": "A",
+                "target": "https://a.test",
+                "note": "我自己写的",
+            },
+        )
+        written = self._run_notes(
+            server,
+            {"suggestions": [{"id": item["id"], "note": "AI 写的"}]},
+            [item["id"]],
+        )
+        self.assertEqual(written, 0)
+        self.assertEqual(
+            self._field(server, "links", item["id"], "note"), "我自己写的"
+        )
+
+    def test_undo_notes_clears_notes_but_keeps_categories(self) -> None:
+        server = self._server()
+        item = self._seed_categorized_row(server)
+        self._run_notes(
+            server,
+            {"suggestions": [{"id": item["id"], "note": "AI 写的"}]},
+            [item["id"]],
+        )
+        undone = server.dispatcher.dispatch("ai.undoNotes", {})
+        self.assertEqual(undone["restored"], 1)
+        self.assertEqual(self._field(server, "links", item["id"], "note"), "")
+        self.assertEqual(
+            self._field(server, "links", item["id"], "category"), "工作"
+        )
+
+    def test_backfill_queues_only_rows_without_a_note(self) -> None:
+        server = self._server()
+        with mock.patch.object(type(server.dispatcher), "_kick_ai"):
+            blank = self._add(server, "A", "https://a.test")
+            filled = self._add(server, "B", "https://b.test")
+        server.dispatcher.dispatch(
+            "resources.update",
+            {
+                "mode": "links",
+                "id": filled["id"],
+                "name": "B",
+                "target": "https://b.test",
+                "note": "已有",
+            },
+        )
+        with mock.patch.object(type(server.dispatcher), "_backfill_worker"):
+            result = server.dispatcher.dispatch("ai.backfill", {})
+        self.assertEqual(result["total"], 1)
+        self.assertEqual(
+            server.dispatcher._ai_backfill_targets, [("links", blank["id"])]
+        )
+
+    def test_backfill_is_refused_without_a_key(self) -> None:
+        server = self._server()
+        server.dispatcher.dispatch("ai.setKey", {"apiKey": ""})
+        with self.assertRaises(ProtocolError) as caught:
+            server.dispatcher.dispatch("ai.backfill", {})
+        self.assertEqual(caught.exception.code, "ai_not_configured")
+
+    def test_undo_restores_uncategorized_and_is_one_shot(self) -> None:
+        server = self._server()
+        with mock.patch.object(type(server.dispatcher), "_kick_ai"):
+            item = self._add(server, "A", "https://a.test")
+        self._run_tag(
+            server,
+            {"suggestions": [{"id": item["id"], "category": "Work"}]},
+            [item["id"]],
+        )
+        self.assertEqual(self._categories(server)[item["id"]], "Work")
+
+        undone = server.dispatcher.dispatch("ai.undoCategorize", {})
+        self.assertEqual(undone["restored"], 1)
+        self.assertEqual(self._categories(server)[item["id"]], UNCATEGORIZED)
+        again = server.dispatcher.dispatch("ai.undoCategorize", {})
+        self.assertEqual(again["restored"], 0)
+
+
+class AiPromptTests(unittest.TestCase):
+    """Phase 30: what the model is told, and what it is not."""
+
+    def test_links_send_the_url_but_never_a_path(self) -> None:
+        entry = _payload_item(
+            AiItem(mode="links", id="l", name="GitHub", target="https://github.com", kind="link")
+        )
+        self.assertEqual(entry["url"], "https://github.com")
+        self.assertNotIn("parent", entry)
+        self.assertNotIn("children", entry)
+
+    def test_folders_send_the_parent_name_and_child_names(self) -> None:
+        entry = _payload_item(
+            AiItem(
+                mode="folders",
+                id="f",
+                name="proj",
+                target=r"D:\Work\proj",
+                kind="folder",
+                children=["src", "README.md"],
+            )
+        )
+        self.assertEqual(entry["parent"], "Work")
+        self.assertEqual(entry["children"], ["src", "README.md"])
+        self.assertNotIn("path", entry)
+
+    def test_reasons_are_omitted_when_not_needed(self) -> None:
+        # The backfill throws reasons away; asking for them was most of the
+        # reply and the reason a 40-row batch overran the output budget.
+        without = _system_prompt(["AI"], "zh", True, False)
+        with_reasons = _system_prompt(["AI"], "zh", True, True)
+        self.assertNotIn("reason", without)
+        self.assertIn('"note"', without)
+        self.assertIn("reason", with_reasons)
+
+    def test_notes_are_only_requested_when_asked_for(self) -> None:
+        with_notes = _system_prompt(["AI"], "zh", True)
+        without = _system_prompt(["AI"], "zh", False)
+        self.assertIn("short note", with_notes)
+        self.assertIn("Simplified Chinese", with_notes)
+        self.assertNotIn("short note", without)
+        self.assertIn("English", _system_prompt([], "en", True))
 
 
 if __name__ == "__main__":
